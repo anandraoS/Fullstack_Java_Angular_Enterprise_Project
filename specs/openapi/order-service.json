@@ -1,0 +1,1221 @@
+{
+  "components": {
+    "schemas": {
+      "AddressDto": {
+        "description": "Shipping address",
+        "properties": {
+          "city": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "country": {
+            "maxLength": 64,
+            "minLength": 2,
+            "type": "string"
+          },
+          "line1": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "postalCode": {
+            "maxLength": 20,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "line1",
+          "postalCode"
+        ],
+        "type": "object"
+      },
+      "AuditEventView": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CancelOrderRequest": {
+        "description": "Cancellation request; the reason is optional but recommended",
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "null"
+      },
+      "CreateCustomerRequest": {
+        "description": "Create-customer request",
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "minLength": 0,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "STANDARD",
+              "SILVER",
+              "GOLD",
+              "PLATINUM"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateOrderRequest": {
+        "description": "Create-order request. Requires the Idempotency-Key header.",
+        "properties": {
+          "customerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderItemRequest"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "shippingAddress": {
+            "$ref": "#/components/schemas/AddressDto"
+          }
+        },
+        "required": [
+          "customerId",
+          "items",
+          "shippingAddress"
+        ],
+        "type": "object"
+      },
+      "CustomerView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "STANDARD",
+              "SILVER",
+              "GOLD",
+              "PLATINUM"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HistoryView": {
+        "properties": {
+          "actor": {
+            "type": "string"
+          },
+          "fromStatus": {
+            "enum": [
+              "CREATED",
+              "VALIDATED",
+              "INVENTORY_RESERVED",
+              "CONFIRMED",
+              "FULFILLED",
+              "REJECTED",
+              "CANCELLED",
+              "COMPENSATION_PENDING",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "toStatus": {
+            "enum": [
+              "CREATED",
+              "VALIDATED",
+              "INVENTORY_RESERVED",
+              "CONFIRMED",
+              "FULFILLED",
+              "REJECTED",
+              "CANCELLED",
+              "COMPENSATION_PENDING",
+              "FAILED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Item": {
+        "properties": {
+          "lineTotal": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "productId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "MessagingStatus": {
+        "properties": {
+          "consumerGroup": {
+            "type": "string"
+          },
+          "deadLettered": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dltTopics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "duplicatesIgnored": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lagAvailable": {
+            "type": "boolean"
+          },
+          "lastProcessedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outboxPending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "processedEvents": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicStatus"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OrderItemRequest": {
+        "description": "One order line: a product and a quantity (1-1000)",
+        "properties": {
+          "productId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "productId",
+          "quantity"
+        ],
+        "type": "object"
+      },
+      "OrderView": {
+        "properties": {
+          "correlationId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customerId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array"
+          },
+          "shippingAddress": {
+            "$ref": "#/components/schemas/AddressDto"
+          },
+          "status": {
+            "enum": [
+              "CREATED",
+              "VALIDATED",
+              "INVENTORY_RESERVED",
+              "CONFIRMED",
+              "FULFILLED",
+              "REJECTED",
+              "CANCELLED",
+              "COMPENSATION_PENDING",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "statusReason": {
+            "type": "string"
+          },
+          "totalAmount": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseAuditEventView": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventView"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseCustomerView": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerView"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseOrderView": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/OrderView"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ReconciliationResult": {
+        "properties": {
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "examined": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "repaired": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SagaView": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currentStep": {
+            "enum": [
+              "VALIDATE",
+              "RESERVE_INVENTORY",
+              "CONFIRM_ORDER",
+              "FULFILL",
+              "RELEASE_INVENTORY"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "orderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sagaId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "RUNNING",
+              "COMPENSATING",
+              "COMPLETED",
+              "ABORTED",
+              "COMPENSATED",
+              "FAILED",
+              "NEEDS_ATTENTION"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Step": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "STARTED",
+              "SUCCEEDED",
+              "FAILED",
+              "RETRIED",
+              "COMPENSATED",
+              "SKIPPED"
+            ],
+            "type": "string"
+          },
+          "step": {
+            "enum": [
+              "VALIDATE",
+              "RESERVE_INVENTORY",
+              "CONFIRM_ORDER",
+              "FULFILL",
+              "RELEASE_INVENTORY"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TopicStatus": {
+        "properties": {
+          "committedOffsets": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "consumerLag": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "partitions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "topic": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Customers, orders and saga operations. Errors are RFC 7807 problem+json (codes: VALIDATION_FAILED, NOT_FOUND, FORBIDDEN, UNAUTHENTICATED, CONFLICT, INVALID_STATE_TRANSITION, IDEMPOTENCY_KEY_REUSED, IDEMPOTENCY_KEY_REQUIRED, RATE_LIMITED, ...). All data is synthetic.",
+    "title": "OMS order-service API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/admin/orders/failed": {
+      "get": {
+        "description": "REJECTED, FAILED, and COMPENSATION_PENDING orders with no progress for oms.saga.stuck-after-seconds",
+        "operationId": "failed",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseOrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Orders needing attention",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}/retry": {
+      "post": {
+        "description": "Re-sends the idempotent command of the current step (or re-runs validation) and resets the attempt counter. 409 INVALID_STATE_TRANSITION for orders in a terminal status.",
+        "operationId": "retry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Retry the current saga step of an order",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/reconciliation/run": {
+      "post": {
+        "description": "Detects order/inventory/fulfillment inconsistencies visible from this service and repairs them by re-issuing idempotent commands. Result is audited.",
+        "operationId": "reconcile",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResult"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Run reconciliation now",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/admin/saga/{orderId}": {
+      "get": {
+        "operationId": "saga",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/SagaView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Saga instance and step log of an order",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/v1/customers": {
+      "get": {
+        "description": "q: prefix of name or email",
+        "operationId": "search_1",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseCustomerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Search customers",
+        "tags": [
+          "Customers"
+        ]
+      },
+      "post": {
+        "description": "ADMIN or OPERATOR; 409 if the email already exists",
+        "operationId": "create_1",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Create a customer",
+        "tags": [
+          "Customers"
+        ]
+      }
+    },
+    "/api/v1/customers/{id}": {
+      "get": {
+        "description": "A CUSTOMER can read only themselves (others: 404)",
+        "operationId": "get_1",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get a customer",
+        "tags": [
+          "Customers"
+        ]
+      }
+    },
+    "/api/v1/ops/audit": {
+      "get": {
+        "operationId": "audit",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseAuditEventView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ops-audit-controller"
+        ]
+      }
+    },
+    "/api/v1/ops/messaging": {
+      "get": {
+        "operationId": "messaging",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagingStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ops-messaging-controller"
+        ]
+      }
+    },
+    "/api/v1/orders": {
+      "get": {
+        "description": "CUSTOMER: always limited to their own orders (customerId is forced). Sort fields: createdAt, updatedAt, status, totalAmount. 'q': order id, or prefix of customer email / city.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "CREATED",
+                "VALIDATED",
+                "INVENTORY_RESERVED",
+                "CONFIRMED",
+                "FULFILLED",
+                "REJECTED",
+                "CANCELLED",
+                "COMPENSATION_PENDING",
+                "FAILED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "customerId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseOrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Search orders",
+        "tags": [
+          "Orders"
+        ]
+      },
+      "post": {
+        "description": "Returns 202 with the order in status CREATED; the saga continues in the background. The Idempotency-Key header (8-64 chars A-Za-z0-9_-) is required: replaying the same key with the same body returns the original response with 'Idempotent-Replay: true'; the same key with a different body is 422 IDEMPOTENCY_KEY_REUSED. A CUSTOMER can only order for their own customerId (403 otherwise). Rate limited per caller (429 + Retry-After).",
+        "operationId": "create",
+        "parameters": [
+          {
+            "description": "8-64 chars of A-Za-z0-9_-",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                }
+              }
+            },
+            "description": "Accepted; Location points to the order"
+          },
+          "400": {
+            "description": "VALIDATION_FAILED or IDEMPOTENCY_KEY_REQUIRED"
+          },
+          "403": {
+            "description": "customerId does not belong to the caller"
+          },
+          "404": {
+            "description": "Unknown customer"
+          },
+          "422": {
+            "description": "IDEMPOTENCY_KEY_REUSED"
+          },
+          "429": {
+            "description": "RATE_LIMITED"
+          }
+        },
+        "summary": "Create an order (asynchronous, idempotent)",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}": {
+      "get": {
+        "description": "404 when the order does not exist or belongs to another customer",
+        "operationId": "get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get one order",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/cancel": {
+      "post": {
+        "description": "Allowed from CREATED, VALIDATED, INVENTORY_RESERVED, CONFIRMED; otherwise 409 INVALID_STATE_TRANSITION. After a reservation exists the order goes through COMPENSATION_PENDING until the inventory is released.",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Cancel an order",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
+    "/api/v1/orders/{id}/history": {
+      "get": {
+        "operationId": "history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Status history of an order, oldest first",
+        "tags": [
+          "Orders"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "description": "Create, search, inspect and cancel orders",
+      "name": "Orders"
+    },
+    {
+      "description": "Operational endpoints: failed orders, saga inspection, retry, reconciliation",
+      "name": "Admin"
+    }
+  ]
+}

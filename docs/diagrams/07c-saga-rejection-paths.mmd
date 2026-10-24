@@ -1,0 +1,24 @@
+---
+title: Saga rejection paths - validation failure, insufficient stock, expiry
+---
+sequenceDiagram
+  autonumber
+  participant O as order-service
+  participant I as inventory-service
+  participant K as Kafka
+  Note over O,I: Path 1 - validation says a line is invalid
+  O->>I: POST /internal/products/validate
+  I-->>O: valid=false (NOT_FOUND, INACTIVE or INSUFFICIENT_STOCK)
+  O->>O: CREATED to REJECTED, statusReason copied, OrderRejected only
+  Note over O,I: Path 2 - lost the race for stock after validation
+  O->>K: ReserveInventory
+  K->>I: ReserveInventory
+  I->>I: conditional UPDATE affects 0 rows, reservation row FAILED
+  I->>K: InventoryReservationFailed (shortages)
+  K->>O: InventoryReservationFailed
+  O->>O: VALIDATED to REJECTED, OrderRejected
+  Note over O,I: Path 3 - reservation expires (TTL 900 s default)
+  I->>I: ReservationExpiryJob: RESERVED to EXPIRED, reserved decreases
+  I->>K: InventoryReleased (reason EXPIRED)
+  K->>O: InventoryReleased EXPIRED
+  O->>O: VALIDATED or INVENTORY_RESERVED to FAILED, OrderFailed

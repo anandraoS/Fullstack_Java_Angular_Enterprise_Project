@@ -1,0 +1,109 @@
+# Prometheus alert rules for OMS. Metric names: Micrometer Prometheus conventions (see observability/README.md section 3).
+# Structure is checked by scripts/check-observability.py; promtool was not available during authoring.
+groups:
+  - name: oms-availability
+    rules:
+      - alert: OmsServiceDown
+        expr: up{job=~"oms-.*"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} instance {{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape the actuator endpoint for 2 minutes."
+
+  - name: oms-api
+    rules:
+      - alert: OmsHighErrorRate
+        expr: |
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"oms-.*",status=~"5.."}[5m]))
+            /
+          sum by (job) (rate(http_server_requests_seconds_count{job=~"oms-.*"}[5m])) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "5xx error ratio above 5% on {{ $labels.job }}"
+          description: "Error ratio over the last 5m is {{ $value | humanizePercentage }}."
+      - alert: OmsHighP95Latency
+        # needs management.metrics.distribution.percentiles-histogram.http.server.requests=true
+        expr: |
+          histogram_quantile(0.95,
+            sum by (job, le) (rate(http_server_requests_seconds_bucket{job=~"oms-.*",uri!~"/actuator.*"}[5m]))) > 1.0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 latency above 1s on {{ $labels.job }}"
+          description: "p95 is {{ $value | humanizeDuration }}."
+
+  - name: oms-messaging
+    rules:
+      - alert: OmsConsumerLagHigh
+        expr: max by (job, topic) (kafka_consumer_fetch_manager_records_lag_max{job=~"oms-.*"}) > 1000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Kafka consumer lag above 1000 records on {{ $labels.topic }} ({{ $labels.job }})"
+          description: "Consumers are not keeping up; check processing duration and DB pool saturation."
+      - alert: OmsDeadLetterRecords
+        expr: increase(oms_events_dead_lettered_total[15m]) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Dead-lettered events detected ({{ $labels.service }}/{{ $labels.topic }})"
+          description: "At least one record went to a .DLT topic in 15m. Inspect /api/v1/ops/messaging and the DLT."
+      - alert: OmsOutboxBacklog
+        expr: max by (service) (oms_outbox_pending) > 100
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Outbox backlog above 100 rows on {{ $labels.service }}"
+          description: "The outbox relay is not publishing (Kafka down or relay stuck). Events are delayed, not lost."
+      - alert: OmsRetryStorm
+        expr: sum by (service) (rate(oms_events_retries_total[5m])) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Sustained consumer retries on {{ $labels.service }}"
+
+  - name: oms-saga
+    rules:
+      - alert: OmsSagasStuck
+        expr: max(oms_saga_active) > 50 and delta(oms_saga_active[30m]) >= 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "In-flight sagas are not draining (stuck sagas suspected)"
+          description: "oms_saga_active stayed high and did not fall for 30m. Check SagaRecoveryJob and /api/v1/admin/saga/{orderId}."
+      - alert: OmsCompensationsSpike
+        expr: increase(oms_saga_compensations_total[15m]) > 10
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "Unusual number of saga compensations in 15m"
+      - alert: OmsOrderProcessingSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(oms_order_processing_duration_seconds_bucket[10m]))) > 30
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 order CREATED-to-terminal duration above 30s"
+
+  - name: oms-resources
+    rules:
+      - alert: OmsHikariPoolExhaustion
+        expr: |
+          (hikaricp_connections_pending{job=~"oms-.*"} > 0)
+          or
+          (hikaricp_connections_active{job=~"oms-.*"} / hikaricp_connections_max{job=~"oms-.*"} > 0.9)
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "DB connection pool near exhaustion on {{ $labels.job }}"
+          description: "Threads are waiting for connections or the pool is above 90% utilisation."
+      - alert: OmsJvmHeapHigh
+        expr: |
+          sum by (job, instance) (jvm_memory_used_bytes{job=~"oms-.*",area="heap"})
+            / sum by (job, instance) (jvm_memory_max_bytes{job=~"oms-.*",area="heap"}) > 0.9
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "JVM heap above 90% on {{ $labels.job }} {{ $labels.instance }}"

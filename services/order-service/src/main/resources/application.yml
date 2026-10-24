@@ -1,0 +1,202 @@
+# order-service configuration. Profiles: dev (default), local, prod, json-logs.  See README.md "Configuration".
+# Platform defaults (graceful shutdown, no error-detail leakage, Flyway common+service locations, Kafka bootstrap
+# OMS_KAFKA_BOOTSTRAP, tracing off, ...) come from platform-common's oms-defaults.properties.
+# Secrets: NONE in this file. The JWT secret is env OMS_JWT_SECRET (>= 32 bytes, startup fails without it);
+# the database password is env OMS_DB_PASSWORD (prod has no default at all).
+
+spring:
+  application:
+    name: order-service
+  profiles:
+    default: dev
+  datasource:
+    # H2 in PostgreSQL mode by default (same Flyway SQL as production). LOCK_TIMEOUT: a concurrent duplicate
+    # Idempotency-Key waits for the winner's commit instead of failing after H2's default 2s.
+    url: ${OMS_DB_URL:jdbc:h2:mem:order_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000}
+    username: ${OMS_DB_USER:sa}
+    password: ${OMS_DB_PASSWORD:}
+    hikari:
+      # Hikari sizing (documented in README "Scaling"): a request holds a connection only for its transaction (no
+      # open-in-view, the REST call to inventory happens OUTSIDE any transaction), so the pool is sized for
+      # concurrent transactions, not for HTTP threads: tomcat workers + 4 scheduler threads + saga executor (<=4) +
+      # Kafka consumers rarely all hold a connection at once. 10 is plenty locally; prod raises it via env.
+      pool-name: order-db
+      maximum-pool-size: ${OMS_DB_POOL_MAX:10}
+      minimum-idle: ${OMS_DB_POOL_MIN_IDLE:2}
+      connection-timeout: 3000      # fail fast (ms) instead of piling up threads when the DB is down
+      validation-timeout: 2000
+      idle-timeout: 300000
+      max-lifetime: 1500000         # < the 30 min typical server/proxy limit so Hikari retires connections first
+      leak-detection-threshold: 0   # 0 = off; dev profile turns it on
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 50   # lazy collections load in batches of 50 ids, never one query per row
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  data:
+    redis:
+      repositories.enabled: false
+      host: ${OMS_REDIS_HOST:localhost}
+      port: ${OMS_REDIS_PORT:6379}
+      timeout: 500ms
+      password: ${OMS_REDIS_PASSWORD:}
+
+server:
+  port: ${SERVER_PORT:18081}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${OMS_TOMCAT_MAX_THREADS:100}
+
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health:
+    probes.enabled: true
+    group:
+      readiness.include: readinessState,db
+  health.redis.enabled: ${OMS_REDIS_ENABLED:false}
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true            # contract section 7: histogram buckets for latency SLOs
+        oms.order.processing.duration: true
+
+springdoc:
+  api-docs.path: /v3/api-docs
+  swagger-ui.path: /swagger-ui.html
+
+oms:
+  messaging:
+    topics: oms.inventory.events.v1,oms.fulfillment.events.v1      # reported by /api/v1/ops/messaging
+    concurrency: ${OMS_KAFKA_CONCURRENCY:1}
+  inventory:
+    base-url: ${OMS_INVENTORY_BASE_URL:http://localhost:18082}
+  saga:
+    stuck-after-seconds: ${OMS_SAGA_STUCK_AFTER_SECONDS:60}
+    max-attempts: ${OMS_SAGA_MAX_ATTEMPTS:5}
+    recovery-enabled: ${OMS_SAGA_RECOVERY_ENABLED:true}
+    recovery-interval-ms: ${OMS_SAGA_RECOVERY_INTERVAL_MS:10000}
+    reservation-ttl-seconds: ${OMS_SAGA_RESERVATION_TTL_SECONDS:900}
+  reconciliation:
+    enabled: ${OMS_RECONCILIATION_ENABLED:true}
+    interval-ms: ${OMS_RECONCILIATION_INTERVAL_MS:300000}
+    min-age-seconds: ${OMS_RECONCILIATION_MIN_AGE_SECONDS:120}
+  idempotency:
+    retention: ${OMS_IDEMPOTENCY_RETENTION:PT24H}
+  order:
+    rate-limit:
+      enabled: ${OMS_ORDER_RATE_LIMIT_ENABLED:true}
+      capacity: ${OMS_ORDER_RATE_CAPACITY:20}
+      refill-per-second: ${OMS_ORDER_RATE_REFILL_PER_SECOND:5}
+  redis:
+    enabled: ${OMS_REDIS_ENABLED:false}     # false = in-memory rate limiter (the local default)
+
+# Resilience4j around the validation call to inventory-service (RestInventoryClient). The Retry sits outside the
+# CircuitBreaker: 3 attempts with exponential backoff for TRANSIENT failures only; the breaker opens when >=50% of the
+# last 10 calls failed and rejects calls for 10s (the saga then retries later via the recovery job).
+resilience4j:
+  retry:
+    instances:
+      inventory:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.enterprise.oms.order.saga.InventoryUnavailableException
+  circuitbreaker:
+    instances:
+      inventory:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.enterprise.oms.order.saga.InventoryUnavailableException
+        ignore-exceptions:
+          - com.enterprise.oms.order.saga.InventoryCallException
+
+logging:
+  level:
+    org.apache.kafka: WARN
+    org.hibernate.orm.deprecation: ERROR
+
+---
+# dev: demo seed customers (db/seed, contract section 9), verbose app logging, leak detection.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/common,classpath:db/migration,classpath:db/seed
+  datasource:
+    hikari:
+      leak-detection-threshold: 20000
+logging:
+  level:
+    com.enterprise.oms: DEBUG
+
+---
+# local: run-local.sh style single-machine run: seed data, embedded Kafka on 19092 (platform default bootstrap),
+# faster saga recovery so the demo recovers within a minute, health details visible.
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    locations: classpath:db/common,classpath:db/migration,classpath:db/seed
+management:
+  endpoint.health.show-details: always
+oms:
+  saga:
+    stuck-after-seconds: ${OMS_SAGA_STUCK_AFTER_SECONDS:30}
+
+---
+# prod: no defaults for anything secret or environment specific. Startup FAILS if OMS_DB_URL / OMS_DB_USER /
+# OMS_DB_PASSWORD / OMS_JWT_SECRET are missing. No seed data. Swagger UI off (the OpenAPI document stays).
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${OMS_DB_URL}
+    username: ${OMS_DB_USER}
+    password: ${OMS_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${OMS_DB_POOL_MAX:20}
+      minimum-idle: ${OMS_DB_POOL_MIN_IDLE:5}
+      leak-detection-threshold: 30000
+  flyway:
+    locations: classpath:db/common,classpath:db/migration
+springdoc:
+  api-docs.enabled: false       # security: no machine-readable API surface in prod
+  swagger-ui.enabled: false
+oms:
+  security:
+    jwt:
+      allow-ephemeral-secret: false
+  messaging:
+    concurrency: ${OMS_KAFKA_CONCURRENCY:3}
+logging:
+  level:
+    com.enterprise.oms: INFO
+
+---
+# json-logs: structured JSON lines (timestamp, level, service, correlationId, traceId, spanId, logger, message) via
+# platform-common's logback-spring.xml. Combine with others: SPRING_PROFILES_ACTIVE=prod,json-logs
+spring:
+  config:
+    activate:
+      on-profile: json-logs
+  main:
+    banner-mode: "off"

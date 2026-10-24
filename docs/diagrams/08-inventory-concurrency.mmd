@@ -1,0 +1,20 @@
+---
+title: Inventory concurrency - atomic conditional update versus check-then-act
+---
+sequenceDiagram
+  autonumber
+  participant A as Request A (qty 3)
+  participant B as Request B (qty 3)
+  participant DB as PostgreSQL stock row (on_hand 5, reserved 0)
+  Note over A,DB: WRONG - check then act (read, compare in Java, write)
+  A->>DB: SELECT on_hand, reserved (available 5)
+  B->>DB: SELECT on_hand, reserved (available 5)
+  A->>DB: UPDATE reserved = 3
+  B->>DB: UPDATE reserved = 3 (lost update, 6 sold, 5 in stock)
+  Note over A,DB: RIGHT - one atomic conditional UPDATE per product
+  A->>DB: UPDATE stock SET reserved = reserved + 3, version = version + 1 WHERE product_id = ? AND on_hand - reserved >= 3
+  DB-->>A: 1 row affected (reserved = 3)
+  B->>DB: same UPDATE (row lock waits for A to commit)
+  DB-->>B: 0 rows affected (available is 2)
+  B->>B: all-or-nothing: roll back the savepoint, reservation FAILED, InventoryReservationFailed
+  Note over DB: CHECK constraints: reserved is at most on_hand, both non-negative, are the last line of defense

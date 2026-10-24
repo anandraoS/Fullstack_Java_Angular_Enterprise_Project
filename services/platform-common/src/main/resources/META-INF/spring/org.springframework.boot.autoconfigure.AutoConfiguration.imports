@@ -1,0 +1,9 @@
+com.enterprise.oms.common.autoconfigure.OmsCoreAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsPersistenceAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsKafkaAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsOutboxAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsMessagingAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsAuditAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsWebAutoConfiguration
+com.enterprise.oms.common.autoconfigure.JwtSecurityAutoConfiguration
+com.enterprise.oms.common.autoconfigure.OmsRetentionAutoConfiguration

@@ -1,0 +1,15 @@
+# Production profile: PostgreSQL only, no defaults for credentials (startup fails when the env vars are missing).
+spring:
+  datasource:
+    url: ${FULFILLMENT_DB_URL}            # e.g. jdbc:postgresql://postgres:5432/fulfillment_db
+    username: ${FULFILLMENT_DB_USERNAME}
+    password: ${FULFILLMENT_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  h2:
+    console:
+      enabled: false
+springdoc:
+  api-docs:
+    enabled: false          # security: no machine-readable API surface in prod (scripts/export-openapi.mjs runs against dev)
+  swagger-ui:
+    enabled: false

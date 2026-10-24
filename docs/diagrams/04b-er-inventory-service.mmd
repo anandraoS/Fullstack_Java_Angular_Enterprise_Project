@@ -1,0 +1,60 @@
+---
+title: ER diagram - inventory_db (inventory-service, Flyway V1, V10)
+---
+erDiagram
+  products ||--|| stock : has
+  products ||--o{ stock_movements : ledger
+  inventory_reservations ||--|{ inventory_reservation_items : holds
+  products ||--o{ inventory_reservation_items : reserved_as
+  products {
+    uuid id PK
+    varchar sku UK
+    varchar name
+    varchar category
+    numeric price
+    boolean active
+    bigint version
+  }
+  stock {
+    uuid product_id PK
+    int on_hand
+    int reserved
+    bigint version
+    timestamptz updated_at
+  }
+  inventory_reservations {
+    uuid id PK
+    uuid order_id UK
+    varchar status
+    timestamptz expires_at
+    varchar release_reason
+    varchar failure_reason
+    timestamptz shipped_at
+    bigint version
+  }
+  inventory_reservation_items {
+    uuid id PK
+    uuid reservation_id FK
+    uuid product_id
+    int quantity
+  }
+  stock_movements {
+    uuid id PK
+    uuid product_id FK
+    varchar movement_type
+    int on_hand_delta
+    int reserved_delta
+    varchar reference
+    varchar actor
+    timestamptz occurred_at
+  }
+  outbox_events {
+    uuid id PK
+    varchar event_type
+    varchar topic
+    timestamptz published_at
+  }
+  processed_events {
+    varchar consumer PK
+    uuid event_id PK
+  }

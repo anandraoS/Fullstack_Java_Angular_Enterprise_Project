@@ -1,0 +1,27 @@
+# Prometheus config for the NO-DOCKER local run (scripts/run-local.sh): scrapes services on localhost.
+#   prometheus --config.file=observability/prometheus/prometheus.yml
+# (Compose uses prometheus.compose.yml with service DNS names; Kubernetes uses ServiceMonitors.)
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels: { env: local }
+
+rule_files:
+  - rules/*.yml
+
+scrape_configs:
+  - job_name: oms-api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["localhost:18080"], labels: { service: api-gateway } }]
+  - job_name: oms-order-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["localhost:18081"], labels: { service: order-service } }]
+  - job_name: oms-inventory-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["localhost:18082"], labels: { service: inventory-service } }]
+  - job_name: oms-fulfillment-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["localhost:18083"], labels: { service: fulfillment-service } }]
+  - job_name: oms-notification-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["localhost:18084"], labels: { service: notification-service } }]

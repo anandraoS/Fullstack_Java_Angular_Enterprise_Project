@@ -1,0 +1,19 @@
+# DEV/TEST ONLY in-cluster data stores (single replica StatefulSets). Decision: dev and test overlays run Postgres, Kafka
+# (KRaft) and Redis in the cluster for self-containment; PROD uses MANAGED services (RDS, MSK, ElastiCache; see
+# infrastructure/cloud) and does NOT include this directory. These are not HA, not backed up, plaintext inside the namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - postgres.yaml
+  - kafka.yaml
+  - redis.yaml
+  - networkpolicy-data.yaml
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - 01-create-databases.sh=files/01-create-databases.sh
+  - name: kafka-init
+    files:
+      - create-topics.sh=files/create-topics.sh
+generatorOptions:
+  disableNameSuffixHash: true

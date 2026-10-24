@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oms.example/schemas/events/envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "Common envelope of every OMS Kafka record value (contract section 7). Consumers are tolerant readers: unknown properties are allowed.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "correlationId",
+    "aggregateType",
+    "aggregateId",
+    "producer",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "OrderCreated",
+        "OrderConfirmed",
+        "OrderCancelled",
+        "OrderRejected",
+        "OrderFulfilled",
+        "OrderFailed",
+        "ReserveInventory",
+        "ReleaseInventory",
+        "InventoryReserved",
+        "InventoryReservationFailed",
+        "InventoryReleased",
+        "StartFulfillment",
+        "FulfillmentStarted",
+        "FulfillmentCompleted",
+        "FulfillmentFailed"
+      ]
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "aggregateType": {
+      "type": "string"
+    },
+    "aggregateId": {
+      "type": "string"
+    },
+    "producer": {
+      "type": "string",
+      "enum": [
+        "order-service",
+        "inventory-service",
+        "fulfillment-service",
+        "notification-service"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

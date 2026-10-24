@@ -1,0 +1,77 @@
+# inventory-service (contract: docs/architecture/00-shared-contract.md). Secrets come ONLY from the environment:
+# OMS_JWT_SECRET (>= 32 bytes, required), OMS_DB_USERNAME / OMS_DB_PASSWORD (prod), OMS_REDIS_PASSWORD (if Redis auth).
+spring:
+  application:
+    name: inventory-service
+  jackson:
+    deserialization:
+      accept-float-as-int: false      # {"delta":1.5} is a 400, not a silent truncation to 1
+  datasource:
+    # local default: in-memory H2 in PostgreSQL mode (same Flyway SQL as production). Prod overrides: application-prod.yml
+    url: ${OMS_DB_URL:jdbc:h2:mem:inventory_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=5000}
+    username: ${OMS_DB_USERNAME:sa}
+    password: ${OMS_DB_PASSWORD:}
+    hikari:
+      # Pool tuning (documented in README "Hikari tuning"): reservations hold a connection only for one short
+      # transaction, so a small pool saturates the DB long before the app; do NOT size to thread count.
+      pool-name: inventory-hikari
+      maximum-pool-size: ${OMS_DB_POOL_SIZE:20}
+      minimum-idle: ${OMS_DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${OMS_DB_CONNECTION_TIMEOUT_MS:3000}   # fail fast (503-ish) instead of piling up request threads
+      max-lifetime: 1500000                                      # < PG/pgbouncer server-side idle/lifetime limits
+      idle-timeout: 300000
+      leak-detection-threshold: ${OMS_DB_LEAK_DETECTION_MS:0}    # 0 = off; set 10000 while investigating leaks
+  data:
+    redis:
+      host: ${OMS_REDIS_HOST:localhost}
+      port: ${OMS_REDIS_PORT:6379}
+      password: ${OMS_REDIS_PASSWORD:}
+      repositories:
+        enabled: false
+
+server:
+  port: 18082
+
+oms:
+  messaging:
+    topics:
+      - oms.inventory.commands.v1
+      - oms.order.events.v1
+      - oms.fulfillment.events.v1
+  redis:
+    enabled: ${OMS_REDIS_ENABLED:false}          # false = in-memory product-read cache; true = Redis cache
+  inventory:
+    reservation-ttl-seconds: ${OMS_RESERVATION_TTL_SECONDS:900}
+    reservation-strategy: ${OMS_RESERVATION_STRATEGY:atomic}     # atomic | pessimistic | optimistic
+    expiry-scheduler-interval-ms: ${OMS_EXPIRY_INTERVAL_MS:30000}
+    expiry-batch-size: 100
+    optimistic-max-retries: 20
+    stock-adjust-max-retries: 5
+    low-stock-threshold: 10
+    cache:
+      ttl-seconds: 30
+      max-entries: 1000
+
+management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true               # p50/p95/p99 via histogram_quantile in Prometheus
+  health:
+    redis:
+      enabled: ${OMS_REDIS_ENABLED:false}        # do not report DOWN for a Redis we are not using
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+# dev: seeded catalog (SKU-1001..SKU-1020, Flyway V1000)
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/common,classpath:db/migration,classpath:db/seed

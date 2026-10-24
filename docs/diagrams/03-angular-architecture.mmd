@@ -1,0 +1,42 @@
+---
+title: Angular 20 architecture - standalone components, signals and the HTTP pipeline
+---
+flowchart TB
+  subgraph shell[App shell]
+    main[main.ts bootstrapApplication] --> cfg[app.config.ts<br/>provideRouter, provideHttpClient]
+    cfg --> cfgsvc[ConfigService<br/>loads config.json at startup]
+    cfg --> routes[app.routes.ts<br/>lazy loadComponent per feature]
+  end
+  subgraph guards[Functional guards]
+    ag[authGuard]
+    rg[roleGuard]
+    gg[guestGuard]
+  end
+  subgraph features[Feature areas lazy loaded]
+    f1[login]
+    f2[dashboard]
+    f3[catalog]
+    f4[orders list / create / detail]
+    f5[inventory]
+    f6[fulfillment]
+    f7[notifications]
+    f8[ops: health, failed orders, audit]
+  end
+  subgraph state[Signal-based state]
+    auth[AuthStore<br/>session signal, hasAnyRole]
+    cart[CartStore]
+    list[ListStore + pure reducers]
+    poll[pollUntil<br/>exponential backoff]
+  end
+  subgraph http[HttpClient interceptor chain]
+    i1[correlationInterceptor<br/>X-Correlation-Id] --> i2[authInterceptor<br/>Bearer token] --> i3[retryInterceptor<br/>GET only, 2 retries] --> i4[errorInterceptor<br/>problem+json to ApiError]
+  end
+  apis[core/api/apis.ts<br/>typed API clients]
+  gw[(API Gateway /api/v1)]
+  routes --> guards --> features
+  features --> state
+  features --> apis
+  state --> apis
+  apis --> http --> gw
+  shared[Shared components<br/>data-table, status-chip, timeline,<br/>confirm-dialog, feedback]
+  features --> shared

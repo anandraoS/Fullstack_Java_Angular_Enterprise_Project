@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Namespace is set per overlay (oms-dev / oms-test / oms-prod). Secrets are NOT part of this kustomization:
+# they are referenced via secretKeyRef (secret `oms-secrets`) and supplied out-of-band (ExternalSecret, SealedSecret or
+# a one-time `kubectl create secret`); see ../README.md and ../examples/.
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - order-service.yaml
+  - inventory-service.yaml
+  - fulfillment-service.yaml
+  - notification-service.yaml
+  - api-gateway.yaml
+  - frontend.yaml
+  - frontend-react.yaml         # optional second UI (React); delete this line to drop it
+  - ingress.yaml
+  - networkpolicies.yaml

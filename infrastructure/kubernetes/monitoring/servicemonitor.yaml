@@ -1,0 +1,26 @@
+# Requires the Prometheus Operator CRDs (kube-prometheus-stack). Apply per environment namespace:
+#   kubectl -n oms-prod apply -k infrastructure/kubernetes/monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: oms-services
+  labels:
+    app.kubernetes.io/part-of: oms
+    release: kube-prometheus-stack     # must match your Prometheus serviceMonitorSelector (assumption)
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: oms
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+      relabelings:
+        # job = oms-<service name>, matching the alert rules' job=~"oms-.*" selectors
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: job
+          replacement: oms-$1
+          regex: (.*)
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: service

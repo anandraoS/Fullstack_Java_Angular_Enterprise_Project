@@ -1,0 +1,6 @@
+# Docker build context for the Java service images is the repository root, but the Dockerfiles only COPY the
+# pre-built fat jars. Everything else is excluded to keep the context tiny and to keep secrets out of layers.
+*
+!services/*/target/*-1.0.0.jar
+!gateway/target/*-1.0.0.jar
+# (the frontend image has its own context: frontend/oms-ui, with its own .dockerignore)

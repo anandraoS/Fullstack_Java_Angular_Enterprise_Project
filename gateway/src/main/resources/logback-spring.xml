@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  api-gateway logging. Default: Spring Boot plain console. Profile "json-logs": one JSON object per line with
+  timestamp, level, service, correlationId, traceId, spanId, logger, message (+ stack_trace) - contract section 10.
+  Correlation ids are put in the MDC by the access-log filter only (reactive: no thread-bound request context).
+-->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <springProperty scope="context" name="serviceName" source="spring.application.name" defaultValue="api-gateway"/>
+
+  <springProfile name="json-logs">
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <fieldNames>
+          <timestamp>timestamp</timestamp>
+          <version>[ignore]</version>
+          <levelValue>[ignore]</levelValue>
+          <logger>logger</logger>
+          <thread>thread</thread>
+        </fieldNames>
+        <customFields>{"service":"${serviceName}"}</customFields>
+        <includeMdcKeyName>correlationId</includeMdcKeyName>
+        <includeMdcKeyName>traceId</includeMdcKeyName>
+        <includeMdcKeyName>spanId</includeMdcKeyName>
+        <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+          <maxDepthPerThrowable>25</maxDepthPerThrowable>
+          <rootCauseFirst>true</rootCauseFirst>
+        </throwableConverter>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="!json-logs">
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+</configuration>

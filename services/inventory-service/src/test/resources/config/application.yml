@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    # in-memory H2 in PostgreSQL mode, same Flyway SQL as production. LOCK_TIMEOUT: many threads queue on one hot row.
+    url: jdbc:h2:mem:inventory_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=20000
+    username: sa
+    password: ""
+    hikari:
+      maximum-pool-size: 20
+  kafka:
+    bootstrap-servers: localhost:1   # unreachable on purpose; Kafka ITs override via @EmbeddedKafka
+
+server:
+  port: 0
+
+oms:
+  security:
+    jwt:
+      allow-ephemeral-secret: true   # tests that sign tokens register the shared random secret instead
+  outbox:
+    relay-enabled: false             # outbox rows are asserted directly; Kafka ITs re-enable the relay
+  inventory:
+    listeners-enabled: false
+    expiry-scheduler-enabled: false
+  messaging:
+    admin-timeout-ms: 500
+    retry:
+      initial-interval-ms: 20
+      max-interval-ms: 100
+
+logging:
+  level:
+    org.apache.kafka: WARN
+    kafka: WARN
+    org.springframework.kafka: WARN
+    org.apache.zookeeper: WARN
+    org.hibernate: WARN
+    org.hibernate.engine.jdbc.spi.SqlExceptionHelper: OFF

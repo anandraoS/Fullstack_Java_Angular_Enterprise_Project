@@ -1,0 +1,23 @@
+---
+title: Security architecture and authentication flow
+---
+sequenceDiagram
+  autonumber
+  participant U as Browser (Angular or React SPA)
+  participant G as api-gateway
+  participant S as Domain service
+  participant I as inventory-service
+  U->>G: POST /api/v1/auth/token (profile dev only)
+  G->>G: LoginThrottle, check demo user, mint HS256 JWT (sub, roles, customerId, iss, aud, exp)
+  G-->>U: accessToken (Bearer, 3600 s)
+  U->>G: GET /api/v1/orders with Authorization Bearer
+  G->>G: validate signature, exp, iss, aud, edge rate limit, body size limit, inject X-Correlation-Id
+  G->>S: forward request (JWT passed through)
+  S->>S: resource-server validates JWT again, URL rules (403 before 400)
+  S->>S: method and resource checks: customerId claim must own the order, else 404
+  S-->>G: 200 or problem+json
+  G-->>U: response
+  Note over S,I: service-to-service
+  S->>I: POST /api/v1/internal/products/validate with short-lived SERVICE JWT (roles SERVICE)
+  I->>I: internal endpoints accept SERVICE only, gateway answers 404 for /internal before auth
+  Note over G,S: Production target: RS256 via OIDC issuer-uri or jwk-set-uri, mTLS or mesh, secrets from a secret manager

@@ -1,0 +1,86 @@
+---
+title: ER diagram - order_db (order-service, Flyway V1, V10-V12)
+---
+erDiagram
+  customers ||--o{ orders : places
+  orders ||--|{ order_items : contains
+  orders ||--o{ order_status_history : records
+  orders ||--o| saga_instances : drives
+  saga_instances ||--o{ saga_step_log : logs
+  customers {
+    uuid id PK
+    varchar name
+    varchar email UK
+    varchar tier
+    timestamptz created_at
+  }
+  orders {
+    uuid id PK
+    uuid customer_id FK
+    varchar customer_email
+    varchar status
+    varchar status_reason
+    decimal total_amount
+    varchar currency
+    varchar ship_city
+    varchar correlation_id
+    bigint version
+  }
+  order_items {
+    uuid id PK
+    uuid order_id FK
+    int line_no
+    uuid product_id
+    varchar sku
+    int quantity
+    decimal unit_price
+    decimal line_total
+  }
+  order_status_history {
+    bigint id PK
+    uuid order_id FK
+    varchar from_status
+    varchar to_status
+    varchar actor
+    timestamptz occurred_at
+  }
+  saga_instances {
+    uuid id PK
+    uuid order_id FK
+    varchar state
+    varchar current_step
+    int attempts
+    varchar reason
+    uuid reservation_id
+    boolean reservation_released
+    bigint version
+  }
+  saga_step_log {
+    bigint id PK
+    uuid saga_id FK
+    varchar step
+    varchar status
+    int attempt
+    timestamptz occurred_at
+  }
+  idempotency_keys {
+    bigint id PK
+    varchar scope
+    varchar idem_key
+    varchar request_hash
+    uuid order_id
+    int response_status
+  }
+  outbox_events {
+    uuid id PK
+    varchar aggregate_id
+    varchar event_type
+    varchar topic
+    timestamptz published_at
+    int attempts
+  }
+  processed_events {
+    varchar consumer PK
+    uuid event_id PK
+    timestamptz processed_at
+  }

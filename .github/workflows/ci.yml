@@ -1,0 +1,393 @@
+# OMS CI. NOT EXECUTED (authored offline; no GitHub runner was available). The YAML parses; behaviour is unverified.
+# Action versions are pinned by MAJOR TAG here. Before production use, pin every `uses:` to a full commit SHA
+# (e.g. `pinact run`) and let Dependabot/Renovate bump them: tags are mutable, SHAs are not.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege by default; jobs that need more declare it explicitly.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "17"
+  NODE_VERSION: "22"
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------- artifact versioning: semver base + git sha
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      semver: ${{ steps.v.outputs.semver }}
+      image_tag: ${{ steps.v.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          base="$(tr -d '[:space:]' < VERSION)"                    # e.g. 1.0.0 (the single source of the semver base)
+          sha="$(git rev-parse --short=8 HEAD)"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then semver="${GITHUB_REF#refs/tags/v}"; else semver="${base}-${sha}"; fi
+          echo "semver=${semver}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${semver}" >> "$GITHUB_OUTPUT"
+          echo "version: ${semver}"
+
+  # ---------------------------------------------------------------- Java build + unit tests
+  java-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17", cache: maven }
+      - name: Unit tests
+        run: mvn -B -ntp -f services/pom.xml test
+      - name: Package jars (tests already ran)
+        run: mvn -B -ntp -f services/pom.xml package -DskipTests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jars
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            services/*/target/*-1.0.0.jar
+            gateway/target/*-1.0.0.jar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-reports
+          retention-days: 7
+          path: "**/target/surefire-reports/**"
+
+  # ---------------------------------------------------------------- integration tests (Testcontainers need Docker: present on ubuntu-latest)
+  java-integration:
+    runs-on: ubuntu-latest
+    needs: java-build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17", cache: maven }
+      # `verify` runs failsafe *IT classes; assumption: services/pom.xml wires failsafe (adjust if integration tests use a profile).
+      - run: mvn -B -ntp -f services/pom.xml verify -DskipTests=false
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: it-reports, retention-days: 7, path: "**/target/failsafe-reports/**" }
+
+  # ---------------------------------------------------------------- Angular
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/oms-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/oms-ui/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run lint --if-present
+      - run: npm test -- --watch=false --browsers=ChromeHeadless
+      - run: npm run build -- --configuration production
+      - uses: actions/upload-artifact@v4
+        with: { name: ui-dist, retention-days: 7, path: frontend/oms-ui/dist }
+
+  # ---------------------------------------------------------------- React + Redux (second UI, ADR 0013)
+  frontend-react:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/oms-ui-react
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/oms-ui-react/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Lint (typescript-eslint, react-hooks, jsx-a11y; zero errors allowed)
+        run: npm run lint
+      - name: Unit/component tests (Vitest + Testing Library + MSW) with coverage
+        run: npm run test:coverage
+      - name: Type check and production build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with: { name: ui-react-dist, retention-days: 7, path: frontend/oms-ui-react/dist }
+      - uses: actions/upload-artifact@v4
+        with: { name: ui-react-coverage, retention-days: 7, path: frontend/oms-ui-react/coverage }
+
+  # The SAME Playwright lifecycle specs as the Angular UI, run against the React build and the Node mock backend.
+  e2e-react-mock:
+    runs-on: ubuntu-latest
+    needs: [frontend-react]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+      - uses: actions/download-artifact@v4
+        with: { name: ui-react-dist, path: frontend/oms-ui-react/dist }
+      - run: npm ci --ignore-scripts
+        working-directory: tests/e2e
+      - run: npx playwright install --with-deps chrome
+        working-directory: tests/e2e
+      - name: Playwright (E2E_UI=react, mock backend)
+        working-directory: tests/e2e
+        env:
+          E2E_UI: react
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: e2e-react-report, retention-days: 7, path: tests/e2e/playwright-report-react }
+
+  # ---------------------------------------------------------------- static analysis
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.language == 'java-kotlin'
+        with: { distribution: temurin, java-version: "17", cache: maven }
+      - uses: github/codeql-action/init@v3
+        with: { languages: "${{ matrix.language }}", build-mode: "${{ matrix.language == 'java-kotlin' && 'manual' || 'none' }}" }
+      - if: matrix.language == 'java-kotlin'
+        run: mvn -B -ntp -f services/pom.xml package -DskipTests
+      - uses: github/codeql-action/analyze@v3
+
+  semgrep:
+    runs-on: ubuntu-latest
+    container: { image: "semgrep/semgrep:1.97.0" }   # pin the digest in production
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config p/default --config p/java --config p/typescript --error --metrics=off --exclude node_modules --exclude target
+
+  # ---------------------------------------------------------------- dependency + secret scanning
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan (Maven + npm lockfiles, IaC misconfig)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}" }
+      - name: npm audit (production deps)
+        working-directory: frontend/oms-ui
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit (production deps, React UI)
+        working-directory: frontend/oms-ui-react
+        run: npm audit --omit=dev --audit-level=high
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: gitleaks (CLI image; avoids the org-licence requirement of the marketplace action)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            detect --source /repo --redact --no-banner --verbose
+
+  # ---------------------------------------------------------------- infra validation
+  infra-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}" }
+      - name: Fetch checksum-verified kustomize/kubeconform/terraform
+        run: OMS_TOOLS_PLATFORM=linux-amd64 node scripts/fetch-validation-tools.mjs kustomize kubeconform terraform
+      - name: kustomize build + kubeconform + terraform validate + compose config + observability checks
+        run: bash scripts/validate-infra.sh
+
+  # ---------------------------------------------------------------- images: build, scan, (push on main)
+  docker:
+    runs-on: ubuntu-latest
+    needs: [version, java-build-test, frontend]
+    permissions:
+      contents: read
+      packages: write          # push to GHCR on main only (see the login/push steps' conditions)
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [order-service, inventory-service, fulfillment-service, notification-service, api-gateway]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: jars }
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (loaded locally for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/${{ matrix.service }}.Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ needs.version.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.semver }}
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ needs.version.outputs.image_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Log in to GHCR
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push (main and tags only)
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: docker push ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ needs.version.outputs.image_tag }}
+
+  docker-ui:
+    runs-on: ubuntu-latest
+    needs: [version, frontend]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Dockerfile is owned by the frontend module (frontend/oms-ui/Dockerfile).
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend/oms-ui
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_PREFIX }}/oms-ui:${{ needs.version.outputs.image_tag }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/oms-ui:${{ needs.version.outputs.image_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with: { registry: "${{ env.REGISTRY }}", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: docker push ${{ env.IMAGE_PREFIX }}/oms-ui:${{ needs.version.outputs.image_tag }}
+
+  docker-ui-react:
+    runs-on: ubuntu-latest
+    needs: [version, frontend-react]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Dockerfile is owned by the React frontend module (frontend/oms-ui-react/Dockerfile).
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend/oms-ui-react
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_PREFIX }}/oms-ui-react:${{ needs.version.outputs.image_tag }}
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/oms-ui-react:${{ needs.version.outputs.image_tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with: { registry: "${{ env.REGISTRY }}", username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        run: docker push ${{ env.IMAGE_PREFIX }}/oms-ui-react:${{ needs.version.outputs.image_tag }}
+
+  # ---------------------------------------------------------------- smoke test against the locally started stack (no cluster needed)
+  smoke-local:
+    runs-on: ubuntu-latest
+    needs: java-build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}" }
+      - uses: actions/download-artifact@v4
+        with: { name: jars }
+      - name: Start local stack (embedded Kafka + 4 services + gateway, H2)
+        run: |
+          # setup-java exports JAVA_HOME for 17; run-local.sh itself only reads OMS_JAVA_HOME.
+          export OMS_JAVA_HOME="${JAVA_HOME}"
+          # credentials are generated per run and written (mode 600) OUTSIDE the workspace, never echoed to the log
+          bash scripts/run-local.sh --no-build --emit-env "${RUNNER_TEMP}/oms.env"
+      - name: Smoke test
+        run: |
+          set -a; source "${RUNNER_TEMP}/oms.env"; set +a
+          bash scripts/smoke-test.sh
+      - name: Logs on failure
+        if: failure()
+        run: tail -n 80 .run/*.log || true
+      - name: Stop
+        if: always()
+        run: bash scripts/stop-local.sh || true
+
+  # ---------------------------------------------------------------- deploy to TEST cluster (NOT EXECUTED; gated)
+  deploy-test:
+    runs-on: ubuntu-latest
+    needs: [version, docker, docker-ui, infra-validate, java-integration, smoke-local, codeql, semgrep, dependency-scan, secret-scan]
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_TEST_ENABLED == 'true'
+    environment: test          # configure required reviewers + environment-scoped secrets in repo settings
+    permissions:
+      contents: read
+      id-token: write          # for cloud OIDC federation (no long-lived keys); unused by the placeholder below
+    steps:
+      - uses: actions/checkout@v4
+      - name: "PLACEHOLDER deploy (needs secret KUBE_CONFIG_TEST_B64, a base64 kubeconfig for a NON-prod cluster)"
+        env:
+          KUBE_CONFIG_B64: ${{ secrets.KUBE_CONFIG_TEST_B64 }}
+          IMAGE_TAG: ${{ needs.version.outputs.image_tag }}
+        run: |
+          if [ -z "${KUBE_CONFIG_B64}" ]; then echo "KUBE_CONFIG_TEST_B64 not set: deploy skipped (placeholder)"; exit 0; fi
+          echo "${KUBE_CONFIG_B64}" | base64 -d > "${RUNNER_TEMP}/kubeconfig"; chmod 600 "${RUNNER_TEMP}/kubeconfig"
+          export KUBECONFIG="${RUNNER_TEMP}/kubeconfig"
+          cd infrastructure/kubernetes/overlays/test
+          for s in order-service inventory-service fulfillment-service notification-service api-gateway oms-ui; do
+            kustomize edit set image "ghcr.io/example-org/oms/${s}=${IMAGE_PREFIX}/${s}:${IMAGE_TAG}"
+          done
+          kustomize build . | kubectl apply -f -
+          for d in order-service inventory-service fulfillment-service notification-service api-gateway; do
+            kubectl -n oms-test rollout status deploy/${d} --timeout=300s
+          done
+      - name: Smoke test against the test environment
+        env:
+          OMS_BASE_URL: ${{ vars.TEST_BASE_URL }}
+          OMS_DEMO_PASSWORD: ${{ secrets.TEST_DEMO_PASSWORD }}   # same value as the oms-secrets demo-password in the test cluster
+        run: |
+          if [ -z "${OMS_BASE_URL}" ]; then echo "TEST_BASE_URL not set: smoke skipped"; exit 0; fi
+          bash scripts/smoke-test.sh

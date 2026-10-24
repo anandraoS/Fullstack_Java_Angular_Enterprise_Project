@@ -1,0 +1,31 @@
+---
+title: Saga compensation - fulfillment failure and customer cancellation
+---
+sequenceDiagram
+  autonumber
+  participant O as order-service
+  participant K as Kafka
+  participant I as inventory-service
+  participant F as fulfillment-service
+  participant R as SagaRecoveryJob
+  Note over O,F: Case A - fulfillment fails after its own retries
+  F->>K: FulfillmentFailed (attempts=3)
+  K->>O: FulfillmentFailed
+  O->>O: CONFIRMED to COMPENSATION_PENDING, saga COMPENSATING reason FULFILLMENT_FAILURE
+  O->>K: ReleaseInventory (via outbox)
+  K->>I: ReleaseInventory
+  I->>I: reservation RELEASED, reserved decreases (shipped goods are never released)
+  I->>K: InventoryReleased
+  K->>O: InventoryReleased
+  O->>O: COMPENSATION_PENDING to FAILED, saga COMPENSATED, OrderFailed event
+  Note over O,I: Case B - customer cancels a confirmed order
+  O->>O: POST cancel: CONFIRMED to COMPENSATION_PENDING (reason CANCELLATION)
+  O->>K: ReleaseInventory
+  K->>I: ReleaseInventory
+  I->>K: InventoryReleased
+  K->>O: InventoryReleased, order CANCELLED, OrderCancelled event
+  Note over O,R: Case C - InventoryReleased never arrives
+  R->>O: finds saga stuck longer than stuck-after-seconds
+  R->>K: re-send ReleaseInventory (idempotent receiver)
+  R->>O: after max-attempts: saga NEEDS_ATTENTION, order stays COMPENSATION_PENDING, alert metric
+  Note over O: Admin retry or ReconciliationService re-opens it

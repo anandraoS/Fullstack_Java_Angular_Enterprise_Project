@@ -1,0 +1,31 @@
+---
+title: Kafka topics, producers, consumers and dead-letter flow
+---
+flowchart LR
+  ord[order-service]
+  inv[inventory-service]
+  ful[fulfillment-service]
+  noti[notification-service]
+  t1[[oms.order.events.v1<br/>OrderCreated, Confirmed, Cancelled,<br/>Rejected, Fulfilled, Failed]]
+  t2[[oms.inventory.commands.v1<br/>ReserveInventory, ReleaseInventory]]
+  t3[[oms.inventory.events.v1<br/>InventoryReserved, ReservationFailed,<br/>InventoryReleased]]
+  t4[[oms.fulfillment.commands.v1<br/>StartFulfillment]]
+  t5[[oms.fulfillment.events.v1<br/>FulfillmentStarted, Completed, Failed]]
+  dlt[[topic.DLT<br/>x-exception-* headers]]
+  ord -->|outbox relay, key=orderId| t1
+  ord -->|outbox relay| t2
+  ord -->|outbox relay| t4
+  inv -->|outbox relay| t3
+  ful -->|outbox relay| t5
+  t1 -->|group notification-service| noti
+  t1 -->|OrderConfirmed, OrderCancelled| inv
+  t2 -->|group inventory-service| inv
+  t3 -->|group order-service| ord
+  t4 -->|group fulfillment-service| ful
+  t5 -->|group order-service| ord
+  t5 -->|FulfillmentCompleted ships stock| inv
+  t5 --> noti
+  ord -.->|poison or retries exhausted| dlt
+  inv -.-> dlt
+  ful -.-> dlt
+  noti -.-> dlt

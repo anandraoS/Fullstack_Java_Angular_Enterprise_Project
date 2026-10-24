@@ -1,0 +1,27 @@
+# Prometheus config used by docker-compose.observability.yml (service DNS names on the compose network).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels: { env: compose }
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: oms-api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["api-gateway:18080"], labels: { service: api-gateway } }]
+  - job_name: oms-order-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["order-service:18081"], labels: { service: order-service } }]
+  - job_name: oms-inventory-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["inventory-service:18082"], labels: { service: inventory-service } }]
+  - job_name: oms-fulfillment-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["fulfillment-service:18083"], labels: { service: fulfillment-service } }]
+  - job_name: oms-notification-service
+    metrics_path: /actuator/prometheus
+    static_configs: [{ targets: ["notification-service:18084"], labels: { service: notification-service } }]
+  - job_name: otel-collector
+    static_configs: [{ targets: ["otel-collector:8888"] }]

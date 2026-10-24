@@ -1,0 +1,85 @@
+// Writes specs/openapi/api-gateway.json: the OpenAPI description of the endpoints the GATEWAY ITSELF owns.
+// The gateway is reactive (Spring Cloud Gateway) and deliberately has no springdoc, so unlike the four services its document
+// cannot be exported from /v3/api-docs; it is authored here (and shapes were checked against live responses, see
+// docs/validation/validation-report.md). Proxied routes are listed under x-proxied-routes and described by the service documents.
+//   node scripts/gen-gateway-openapi.mjs
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const problem = { $ref: '#/components/schemas/Problem' };
+const doc = {
+  openapi: '3.1.0',
+  info: {
+    title: 'OMS API Gateway',
+    version: '1.0.0',
+    description: 'Edge of the OMS platform: JWT validation, rate limiting, correlation id, CORS, route table. Only the endpoints answered by the gateway itself are described here; everything under x-proxied-routes is forwarded to the owning service (see the other documents in this directory).',
+  },
+  servers: [{ url: 'http://localhost:18080', description: 'local stack (scripts/run-local.sh)' }],
+  paths: {
+    '/api/v1/auth/token': {
+      post: {
+        operationId: 'issueDevToken',
+        summary: 'Dev token endpoint (ONLY when profile `dev` is active; absent in prod where a real IdP issues tokens)',
+        security: [],
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TokenRequest' } } } },
+        responses: {
+          200: { description: 'HS256 access token (1 h)', content: { 'application/json': { schema: { $ref: '#/components/schemas/TokenResponse' } } } },
+          401: { description: 'Bad credentials (generic message, never echoes details)', content: { 'application/problem+json': { schema: problem } } },
+          429: { description: 'Login throttled after repeated failures (per ip+username and per ip)', headers: { 'Retry-After': { schema: { type: 'integer' } } }, content: { 'application/problem+json': { schema: problem } } },
+        },
+      },
+    },
+    '/api/v1/ops/health': {
+      get: {
+        operationId: 'aggregateHealth',
+        summary: 'Aggregate readiness of the four services (OPERATOR, ADMIN). Always HTTP 200; a down service is reported in the body.',
+        responses: {
+          200: { description: 'Aggregate status', content: { 'application/json': { schema: { $ref: '#/components/schemas/OpsHealth' } } } },
+          401: { description: 'Missing/invalid token', content: { 'application/problem+json': { schema: problem } } },
+          403: { description: 'Not OPERATOR/ADMIN', content: { 'application/problem+json': { schema: problem } } },
+        },
+      },
+    },
+  },
+  'x-proxied-routes': {
+    'order-service': ['/api/v1/customers/**', '/api/v1/orders/**', '/api/v1/admin/orders/**', '/api/v1/admin/saga/**', '/api/v1/admin/reconciliation/**', '/api/v1/ops/order/** -> /api/v1/ops/**'],
+    'inventory-service': ['/api/v1/products/**', '/api/v1/inventory/**', '/api/v1/ops/inventory/** -> /api/v1/ops/**'],
+    'fulfillment-service': ['/api/v1/fulfillments/**', '/api/v1/admin/fulfillments/**', '/api/v1/ops/fulfillment/** -> /api/v1/ops/**'],
+    'notification-service': ['/api/v1/notifications/**', '/api/v1/admin/notifications/**', '/api/v1/ops/notification/** -> /api/v1/ops/**'],
+    'never routed': ['/api/v1/internal/** (404 at the edge)', '/v3/api-docs, /swagger-ui (not routed)', '/actuator/** of the services'],
+  },
+  components: {
+    securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
+    schemas: {
+      TokenRequest: { type: 'object', required: ['username', 'password'], properties: { username: { type: 'string' }, password: { type: 'string', format: 'password' } } },
+      TokenResponse: {
+        type: 'object',
+        required: ['accessToken', 'tokenType', 'expiresIn', 'username', 'roles'],
+        properties: {
+          accessToken: { type: 'string' }, tokenType: { type: 'string', enum: ['Bearer'] }, expiresIn: { type: 'integer' }, username: { type: 'string' },
+          roles: { type: 'array', items: { type: 'string', enum: ['CUSTOMER', 'OPERATOR', 'ADMIN', 'SERVICE'] } }, customerId: { type: ['string', 'null'], format: 'uuid' },
+        },
+      },
+      OpsHealth: {
+        type: 'object',
+        required: ['status', 'services'],
+        properties: {
+          status: { type: 'string', enum: ['UP', 'DOWN', 'DEGRADED'] },
+          services: { type: 'object', additionalProperties: { type: 'object', required: ['status'], properties: { status: { type: 'string', enum: ['UP', 'DOWN'] }, detail: { type: ['string', 'null'] } } } },
+        },
+      },
+      Problem: {
+        type: 'object',
+        required: ['type', 'title', 'status', 'code'],
+        properties: { type: { type: 'string' }, title: { type: 'string' }, status: { type: 'integer' }, detail: { type: 'string' }, instance: { type: 'string' }, code: { type: 'string' }, correlationId: { type: 'string' }, timestamp: { type: 'string', format: 'date-time' }, errors: { type: 'array', items: { type: 'object', properties: { field: { type: 'string' }, message: { type: 'string' } } } } },
+      },
+    },
+  },
+  security: [{ bearerAuth: [] }],
+};
+const out = path.join(ROOT, 'specs/openapi/api-gateway.json');
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify(doc, null, 2) + '\n');
+console.log(`wrote ${path.relative(ROOT, out)}`);

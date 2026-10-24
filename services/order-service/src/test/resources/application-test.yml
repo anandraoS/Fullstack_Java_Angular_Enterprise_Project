@@ -1,0 +1,59 @@
+# Shared test configuration (activated with @ActiveProfiles("test") on the test base classes).
+# No secrets: the JWT secret is generated per JVM by JwtTestTokens and injected via @DynamicPropertySource.
+spring:
+  datasource:
+    # unique in-memory DB per Spring context so cached contexts never share rows
+    url: jdbc:h2:mem:order_${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+    username: sa
+    password: ""
+  flyway:
+    locations: classpath:db/common,classpath:db/migration
+  kafka:
+    bootstrap-servers: localhost:1     # unreachable on purpose; Kafka tests get an embedded broker instead
+
+server:
+  port: 0
+
+oms:
+  inventory:
+    base-url: http://localhost:1       # tests replace InventoryClient with a stub
+  saga:
+    auto-start: false                  # tests drive validation explicitly (Kafka ITs turn it on)
+    listeners-enabled: false
+    recovery-enabled: false
+    recovery-batch-size: 100000
+    stuck-after-seconds: 1
+  reconciliation:
+    enabled: false
+    min-age-seconds: 0
+    batch-size: 100000
+  idempotency:
+    cleanup-enabled: false
+  outbox:
+    relay-enabled: false
+  messaging:
+    admin-timeout-ms: 500
+    retry:
+      initial-interval-ms: 20
+      max-interval-ms: 100
+  order:
+    rate-limit:
+      capacity: 1000
+      refill-per-second: 1000
+
+resilience4j:
+  retry:
+    instances:
+      inventory:
+        wait-duration: 5ms
+
+logging:
+  level:
+    org.apache.kafka: WARN
+    kafka: WARN
+    org.springframework.kafka: WARN
+    org.apache.zookeeper: WARN
+    org.hibernate: WARN
+    com.enterprise.oms: INFO
+
+spring.jpa.properties.hibernate.generate_statistics: true

@@ -1,0 +1,472 @@
+{
+  "components": {
+    "schemas": {
+      "AuditEventView": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EventView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "PICKING",
+              "PACKED",
+              "SHIPPED",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FulfillmentView": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventView"
+            },
+            "type": "array"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "orderId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "PICKING",
+              "PACKED",
+              "SHIPPED",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "trackingNumber": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MessagingStatus": {
+        "properties": {
+          "consumerGroup": {
+            "type": "string"
+          },
+          "deadLettered": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "dltTopics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "duplicatesIgnored": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lagAvailable": {
+            "type": "boolean"
+          },
+          "lastProcessedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outboxPending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "processedEvents": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicStatus"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseAuditEventView": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventView"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PageResponseFulfillmentView": {
+        "properties": {
+          "content": {
+            "items": {
+              "$ref": "#/components/schemas/FulfillmentView"
+            },
+            "type": "array"
+          },
+          "page": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "size": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "totalElements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "totalPages": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "TopicStatus": {
+        "properties": {
+          "committedOffsets": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "consumerLag": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "partitions": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "topic": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Simulated fulfillment lifecycle (PENDING, PICKING, PACKED, SHIPPED, COMPLETED, FAILED)",
+    "title": "OMS fulfillment-service API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/admin/fulfillments/{id}/retry": {
+      "post": {
+        "operationId": "retry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FulfillmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Retry a FAILED fulfillment: FAILED -> PENDING, attempts reset (409 if not FAILED)",
+        "tags": [
+          "Fulfillments"
+        ]
+      }
+    },
+    "/api/v1/fulfillments": {
+      "get": {
+        "operationId": "list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orderId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseFulfillmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List fulfillments (OPERATOR, ADMIN)",
+        "tags": [
+          "Fulfillments"
+        ]
+      }
+    },
+    "/api/v1/fulfillments/{id}": {
+      "get": {
+        "operationId": "get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/FulfillmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get one fulfillment (OPERATOR, ADMIN)",
+        "tags": [
+          "Fulfillments"
+        ]
+      }
+    },
+    "/api/v1/ops/audit": {
+      "get": {
+        "operationId": "audit",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageResponseAuditEventView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ops-audit-controller"
+        ]
+      }
+    },
+    "/api/v1/ops/messaging": {
+      "get": {
+        "operationId": "messaging",
+        "responses": {
+          "200": {
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagingStatus"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "ops-messaging-controller"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ]
+}

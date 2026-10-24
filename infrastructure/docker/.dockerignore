@@ -1,0 +1,5 @@
+# Same policy as the root .dockerignore (the root file is the one Docker applies when the context is the repo root;
+# this copy documents intent and applies if someone uses infrastructure/docker as the context).
+*
+!services/*/target/*-1.0.0.jar
+!gateway/target/*-1.0.0.jar

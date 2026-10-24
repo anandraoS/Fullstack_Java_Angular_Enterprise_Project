@@ -1,0 +1,34 @@
+flowchart LR
+  user([Browser]) --> r53[Route 53] --> waf[AWS WAF] --> alb[ALB<br/>ACM TLS cert]
+  subgraph vpc[VPC 3 AZ]
+    subgraph pub[public subnets]
+      alb
+      nat[NAT gateways]
+    end
+    subgraph priv[private subnets - EKS managed node group]
+      ui[frontend]
+      gw[api-gateway]
+      ord[order-service]
+      inv[inventory-service]
+      ful[fulfillment-service]
+      not[notification-service]
+    end
+    subgraph data[data subnets - no internet route]
+      rds[(RDS PostgreSQL 16<br/>Multi-AZ, 4 databases)]
+      msk[[MSK Kafka<br/>IAM auth, TLS]]
+      ec[(ElastiCache Redis<br/>rate limiting)]
+    end
+  end
+  alb --> ui
+  alb --> gw
+  gw --> ord & inv & ful & not
+  ord -->|REST validate| inv
+  ord & inv & ful & not --> rds
+  ord & inv & ful & not --> msk
+  gw --> ec
+  ord & inv --> ec
+  ecr[(ECR<br/>immutable tags)] -.image pull.-> priv
+  sm[Secrets Manager] -.External Secrets + IRSA.-> priv
+  priv -.remote_write.-> amp[Amazon Managed Prometheus] --> amg[Amazon Managed Grafana]
+  priv -.logs.-> cw[CloudWatch Logs]
+  priv -.OTLP.-> xray[X-Ray / ADOT]

@@ -1,0 +1,14 @@
+# prod: PostgreSQL, no defaults for credentials or URL (startup fails if they are missing).
+spring:
+  datasource:
+    url: ${OMS_DB_URL}
+    username: ${OMS_DB_USERNAME}
+    password: ${OMS_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    locations: classpath:db/common,classpath:db/migration   # never seed production
+springdoc:
+  api-docs:
+    enabled: false          # security: no machine-readable API surface in prod (scripts/export-openapi.mjs runs against dev)
+  swagger-ui:
+    enabled: false

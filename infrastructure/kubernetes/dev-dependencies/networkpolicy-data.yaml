@@ -1,0 +1,37 @@
+# Data-store pods accept traffic only from the OMS application pods (and from each other / the init job).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apps-to-data
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/part-of: oms-data }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: oms }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: oms-data }
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 9092 }
+        - { protocol: TCP, port: 9093 }
+        - { protocol: TCP, port: 6379 }
+---
+# Kafka must talk to itself (advertised listener via the headless service) and the init Job to Kafka.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-data-internal-egress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/part-of: oms-data }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: oms-data }
+      ports:
+        - { protocol: TCP, port: 9092 }
+        - { protocol: TCP, port: 9093 }

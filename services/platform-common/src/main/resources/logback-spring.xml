@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared logging config for all OMS servlet services (a service may ship its own logback-spring.xml to replace it).
+  - default (no profile): Spring Boot's plain console pattern; the correlation id appears via logging.pattern.correlation.
+  - profile "json-logs": one JSON object per line (logstash-logback-encoder) with fields
+    timestamp, level, service, correlationId, traceId, spanId, logger, message (+ stack_trace) - contract section 10.
+  Activate JSON in containers with SPRING_PROFILES_ACTIVE=json-logs (may be combined with other profiles).
+-->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <springProperty scope="context" name="serviceName" source="spring.application.name" defaultValue="unknown"/>
+
+  <springProfile name="json-logs">
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <fieldNames>
+          <timestamp>timestamp</timestamp>
+          <version>[ignore]</version>
+          <levelValue>[ignore]</levelValue>
+          <logger>logger</logger>
+          <thread>thread</thread>
+        </fieldNames>
+        <customFields>{"service":"${serviceName}"}</customFields>
+        <includeMdcKeyName>correlationId</includeMdcKeyName>
+        <includeMdcKeyName>traceId</includeMdcKeyName>
+        <includeMdcKeyName>spanId</includeMdcKeyName>
+        <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+          <maxDepthPerThrowable>25</maxDepthPerThrowable>
+          <rootCauseFirst>true</rootCauseFirst>
+        </throwableConverter>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="JSON"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="!json-logs">
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <root level="INFO">
+      <appender-ref ref="CONSOLE"/>
+    </root>
+  </springProfile>
+</configuration>

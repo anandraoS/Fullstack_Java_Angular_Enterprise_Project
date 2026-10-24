@@ -1,0 +1,145 @@
+# api-gateway (reactive Spring Cloud Gateway). Contract: docs/architecture/00-shared-contract.md. See gateway/README.md.
+# Environment overrides use Spring relaxed binding, e.g. OMS_GATEWAY_ROUTES_ORDER_URI -> oms.gateway.routes.order.uri.
+spring:
+  application:
+    name: api-gateway
+  main:
+    web-application-type: reactive
+  # platform-common is on the classpath only for JwtSecret/JwtTokenFactory/Roles/CorrelationIds/LogMasking;
+  # its servlet/JPA/Kafka auto-configurations must not run in this reactive app.
+  autoconfigure:
+    exclude:
+      - com.enterprise.oms.common.autoconfigure.OmsCoreAutoConfiguration   # ProblemWriter needs the servlet API
+      - com.enterprise.oms.common.autoconfigure.OmsPersistenceAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.OmsKafkaAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.OmsOutboxAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.OmsMessagingAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.OmsAuditAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.OmsWebAutoConfiguration
+      - com.enterprise.oms.common.autoconfigure.JwtSecurityAutoConfiguration
+  http:
+    codecs:
+      max-in-memory-size: 128KB
+  cloud:
+    loadbalancer:
+      enabled: false          # static URIs only, no service discovery
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000      # ms
+            response-timeout: 10s
+          # Gateway route metrics are left at their defaults: enabling the reactor-netty client metrics here clashes
+          # with Spring's http.client.requests meters in the Prometheus registry (tag-key mismatch warnings).
+  data:
+    redis:                    # used only when oms.redis.enabled=true
+      host: localhost
+      port: 6379
+      timeout: 500ms
+
+server:
+  port: 18080
+  shutdown: graceful
+  max-http-request-header-size: 16KB
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    redis:
+      enabled: false          # a Redis outage degrades rate limiting to in-memory; it must not fail readiness
+  metrics:
+    tags:
+      service: api-gateway
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true      # histogram_quantile panels / OmsHighP95Latency need *_bucket series
+
+oms:
+  security:
+    enabled: false            # platform-common's servlet security auto-config stays off; the gateway has its own reactive chain
+    jwt:
+      issuer: oms-dev-issuer
+      audience: oms-api
+      # secret: set ONLY via env OMS_JWT_SECRET (>= 32 bytes). No default: startup fails when missing.
+  outbox.enabled: false
+  messaging.enabled: false
+  audit.enabled: false
+  kafka.enabled: false
+  redis:
+    enabled: false
+  gateway:
+    routes:
+      order.uri: http://localhost:18081
+      inventory.uri: http://localhost:18082
+      fulfillment.uri: http://localhost:18083
+      notification.uri: http://localhost:18084
+    cors:
+      allowed-origins: []     # default: same-origin only
+    max-body-bytes: 65536
+    rate-limit:
+      enabled: true
+      capacity: 100
+      refill-per-second: 50
+    circuit-breaker:
+      sliding-window-size: 20
+      minimum-calls: 10
+      failure-rate-percent: 50
+      wait-in-open-state: 10s
+      time-limit: 12s
+    bulkhead:
+      max-concurrent-calls: ${OMS_GATEWAY_BULKHEAD_MAX_CALLS:200}   # per downstream service; library default 25 shed load at 26 parallel orders
+      max-wait: 500ms
+    health:
+      timeout: 2s
+
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: WARN
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+oms:
+  demo:
+    # Required in profile dev (startup fails if empty / < 8 chars). Never commit a value; scripts/run-local.sh generates one.
+    password: ${OMS_DEMO_PASSWORD:}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+logging:
+  level:
+    com.enterprise.oms.gateway: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+oms:
+  gateway:
+    # prod: no dev token endpoint (profile dev is not active), real IdP via oms.security.jwt.issuer-uri / jwk-set-uri,
+    # secret/CORS origins/route URIs come from the environment. No defaults for secrets.
+    rate-limit:
+      capacity: 100
+      refill-per-second: 50
+logging:
+  level:
+    root: INFO

@@ -1,0 +1,16 @@
+---
+title: REST order creation - idempotency, authorization and async acceptance
+---
+flowchart TB
+  req[POST /api/v1/orders<br/>Idempotency-Key, JWT, JSON body] --> gwf[Gateway: JWT, rate limit, size limit]
+  gwf --> auth{CUSTOMER customerId<br/>equals body customerId?}
+  auth -->|no| e403[403 FORBIDDEN problem+json]
+  auth -->|yes| key{Idempotency-Key present<br/>8-64 chars?}
+  key -->|missing| e400[400 IDEMPOTENCY_KEY_REQUIRED]
+  key -->|ok| seen{scope + key seen?}
+  seen -->|same fingerprint| replay[202 original body<br/>Idempotent-Replay true]
+  seen -->|different fingerprint| e422[422 IDEMPOTENCY_KEY_REUSED]
+  seen -->|new| tx[Transaction: order CREATED, history,<br/>saga RUNNING, idempotency row, audit]
+  tx --> acc[202 Accepted + Location]
+  acc --> async[Saga continues asynchronously;<br/>client polls GET /orders/id]
+  req -.too many.-> e429[429 RATE_LIMITED + Retry-After]

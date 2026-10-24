@@ -1,0 +1,14 @@
+---
+title: AI-assisted development workflow with human gates
+---
+flowchart LR
+  spec[1 Write feature spec<br/>specs/features/*.md] --> ctx[2 Load repo context files<br/>ai-engineering/context]
+  ctx --> gen[3 AI drafts code and tests<br/>implementation, testing agents]
+  gen --> self[4 Developer reads every line<br/>compare with flawed-AI catalog]
+  self --> chk[5 Automated gates<br/>unit tests, scanners, CI]
+  chk --> rev[6 Human code review<br/>PR checklist, security agent notes]
+  rev --> dod[7 Definition of done<br/>docs updated, evidence recorded]
+  rev -->|findings| gen
+  chk -->|failures| gen
+  dod --> learn[8 Capture lesson:<br/>update context or flawed examples]
+  learn -.-> ctx

@@ -1,0 +1,28 @@
+---
+title: Threat model data flow with trust boundaries
+---
+flowchart LR
+  subgraph TB1[Trust boundary 1 - Internet]
+    B[Browser: Angular SPA or React SPA]
+  end
+  subgraph TB2[Trust boundary 2 - Edge namespace / DMZ]
+    ING[Ingress TLS]
+    GW[api-gateway: JWT validation, rate limit, CORS, correlation id]
+  end
+  subgraph TB3[Trust boundary 3 - Service network, default-deny NetworkPolicy]
+    OS[order-service]
+    IS[inventory-service]
+    FS[fulfillment-service]
+    NS[notification-service]
+  end
+  subgraph TB4[Trust boundary 4 - Data plane]
+    K[(Kafka + DLT)]
+    P[(PostgreSQL per-service DB)]
+    R[(Redis optional)]
+  end
+  B -- "1 HTTPS + Bearer JWT" --> ING --> GW
+  GW -- "2 HTTP + JWT forwarded + X-Correlation-Id" --> OS & IS & FS & NS
+  OS -- "3 REST /internal + SERVICE JWT" --> IS
+  OS & IS & FS & NS -- "4 SQL" --> P
+  OS & IS & FS & NS -- "5 events (outbox relay / consumers)" --> K
+  GW -- "6 rate-limit buckets" --> R

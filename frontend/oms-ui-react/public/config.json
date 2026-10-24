@@ -1,0 +1,5 @@
+{
+  "apiBaseUrl": "/api/v1",
+  "pollIntervalMs": 1500,
+  "pollMaxIntervalMs": 8000
+}

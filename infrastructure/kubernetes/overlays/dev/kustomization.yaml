@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: oms-dev
+resources:
+  - ../../base
+  - ../../dev-dependencies      # in-cluster Postgres/Kafka/Redis (single replica, NOT HA)
+images:                         # CI replaces newTag with <semver>-<gitsha>; registry path is a placeholder
+  - { name: ghcr.io/example-org/oms/order-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/inventory-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/fulfillment-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/notification-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/api-gateway, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/oms-ui, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/oms-ui-react, newTag: 1.0.0 }
+replicas:
+  - { name: order-service, count: 1 }
+  - { name: inventory-service, count: 1 }
+  - { name: fulfillment-service, count: 1 }
+  - { name: notification-service, count: 1 }
+  - { name: api-gateway, count: 1 }
+  - { name: frontend, count: 1 }
+patches:
+  - target: { kind: PodDisruptionBudget }     # single replicas: a PDB would block node drains
+    patch: |-
+      $patch: delete
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: ignored
+  - target: { kind: HorizontalPodAutoscaler }
+    patch: |-
+      - { op: replace, path: /spec/minReplicas, value: 1 }
+      - { op: replace, path: /spec/maxReplicas, value: 2 }
+  - target: { kind: Deployment, labelSelector: "app.kubernetes.io/component in (service,edge)" }
+    patch: |-
+      - { op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: 100m }
+      - { op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: 384Mi }
+      - { op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: 768Mi }
+  - target: { kind: Ingress, name: oms }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: oms-dev.example.test }
+      - { op: replace, path: /spec/tls/0/hosts/0, value: oms-dev.example.test }
+  - target: { kind: ConfigMap, name: oms-config }
+    patch: |-
+      - { op: replace, path: /data/SPRING_PROFILES_ACTIVE, value: "dev,json-logs" }   # explicit: dev token endpoint + seed data for this non-prod cluster
+      - { op: replace, path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY, value: "1.0" }
+      - { op: replace, path: /data/OMS_GATEWAY_CORS_ALLOWED_ORIGINS, value: "https://oms-dev.example.test" }

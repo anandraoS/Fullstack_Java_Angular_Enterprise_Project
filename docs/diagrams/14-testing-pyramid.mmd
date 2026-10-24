@@ -1,0 +1,15 @@
+---
+title: Testing pyramid for the platform
+---
+flowchart TB
+  e2e[Browser end-to-end: Playwright against a mock backend<br/>few, slow, high confidence]
+  perf[Load and oversell checks: k6 scripts, run on demand]
+  api[Smoke and API-level: scripts/smoke-test.mjs, BDD feature files]
+  integ[Integration: Spring Boot tests with H2 and EmbeddedKafka<br/>Testcontainers variants skipped without Docker]
+  unit[Unit: JUnit 5 + Mockito, pure OrderStateMachine matrix,<br/>Angular store tests, React Vitest tests, many, fast]
+  e2e --> perf --> api --> integ --> unit
+  style e2e fill:#fde8e8,stroke:#a33
+  style perf fill:#fdeede,stroke:#b60
+  style api fill:#fdf6d8,stroke:#a80
+  style integ fill:#e6f3e6,stroke:#363
+  style unit fill:#dcebf8,stroke:#17324d

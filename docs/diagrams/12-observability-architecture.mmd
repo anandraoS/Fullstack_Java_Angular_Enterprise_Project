@@ -1,0 +1,18 @@
+---
+title: Observability architecture - logs, metrics and traces
+---
+flowchart LR
+  subgraph apps[Services and gateway]
+    app[Spring Boot app<br/>Micrometer, OTel bridge,<br/>logstash JSON logs,<br/>MDC correlationId traceId]
+  end
+  app -->|/actuator/prometheus scrape| prom[Prometheus<br/>rules: oms-alerts.yml]
+  app -->|OTLP traces| otel[OTel Collector]
+  otel --> tempo[Tempo]
+  app -->|stdout JSON| promtail[Promtail] --> loki[Loki]
+  prom --> graf[Grafana<br/>5 dashboards: API RED, JVM,<br/>Hikari, messaging, saga funnel]
+  tempo --> graf
+  loki --> graf
+  prom --> alert[Alert rules<br/>lag, DLT, outbox pending,<br/>saga stuck, 5xx, latency]
+  alert --> rb[Runbooks 01-08]
+  kafkahdr[Kafka headers<br/>traceparent, correlationId] -.propagation.-> app
+  ops[/api/v1/ops/messaging and /audit<br/>per service/] -.operator view.-> app

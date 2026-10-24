@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: fulfillment-service          # Kafka consumer group, metric tag "service", service-token subject
+  datasource:
+    # Local default: in-memory H2 in PostgreSQL mode (same Flyway SQL as production). No credentials of value.
+    url: ${FULFILLMENT_DB_URL:jdbc:h2:mem:fulfillment_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1}
+    username: ${FULFILLMENT_DB_USERNAME:sa}
+    password: ${FULFILLMENT_DB_PASSWORD:}
+
+server:
+  port: ${SERVER_PORT:18083}
+
+oms:
+  messaging:
+    topics: oms.fulfillment.commands.v1      # topics reported by GET /api/v1/ops/messaging (DLT topics derived)
+  fulfillment:
+    step-delay-ms: ${OMS_FULFILLMENT_STEP_DELAY_MS:1500}   # delay between lifecycle steps (and between internal attempts)
+    failure-rate: ${OMS_FULFILLMENT_FAILURE_RATE:0.0}       # 0.0..1.0 random failure probability per attempt
+    max-attempts: ${OMS_FULFILLMENT_MAX_ATTEMPTS:3}         # internal attempts before FulfillmentFailed
+    poll-interval-ms: ${OMS_FULFILLMENT_POLL_INTERVAL_MS:250}
+    batch-size: 25
+    scheduler-enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs

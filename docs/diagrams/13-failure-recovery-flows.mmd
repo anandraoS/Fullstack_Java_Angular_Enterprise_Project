@@ -1,0 +1,22 @@
+---
+title: Failure and recovery flows
+---
+flowchart TB
+  f1[Broker down when saga transition commits] --> r1[Outbox row stays unpublished<br/>relay retries with attempts counter]
+  r1 --> ok1[Published later: at-least-once]
+  f2[Duplicate event delivered] --> r2[processed_events PK consumer,event_id<br/>plus state-machine NO_OP]
+  r2 --> ok2[Business effect applied once]
+  f3[Handler throws] --> r3[DefaultErrorHandler: 4 attempts,<br/>500 ms doubling to 5 s]
+  r3 --> d{Retryable?}
+  d -->|no: bad JSON, validation| dlt[Dead-letter topic.DLT immediately]
+  d -->|exhausted| dlt
+  dlt --> op[Operator inspects headers, fixes cause, replays]
+  f4[Inventory REST validate fails] --> r4[Resilience4j retry x3 + circuit breaker]
+  r4 --> r4b[Saga attempt counter; after max-attempts order FAILED]
+  f5[Saga step stuck] --> r5[SagaRecoveryJob re-sends idempotent command]
+  r5 --> r5b[Exhausted: NEEDS_ATTENTION + alert]
+  f6[Order and reservation disagree] --> r6[ReconciliationService repairs with compensating commands]
+  f7[Reservation never confirmed] --> r7[ReservationExpiryJob releases stock after TTL]
+  f8[Upstream service down at edge] --> r8[Gateway circuit breaker: 503 UPSTREAM_UNAVAILABLE + Retry-After]
+  r6 --> audit[Audit events + metrics]
+  r5b --> audit

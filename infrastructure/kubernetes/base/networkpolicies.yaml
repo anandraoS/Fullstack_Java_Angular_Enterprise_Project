@@ -1,0 +1,156 @@
+# Zero-trust network model: default deny (ingress + egress), then explicit allows.
+# Requires a CNI that enforces NetworkPolicy (Calico, Cilium, AWS VPC CNI with network policy enabled...).
+# Selectors rely on: app.kubernetes.io/part-of=oms, component=edge|service|ui, tier=data (dev in-cluster data stores).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# ingress controller -> gateway and UI only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller-to-edge
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [edge, ui] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 18080 }
+        - { protocol: TCP, port: 8080 }
+---
+# gateway -> backend services (ingress side on the services; order-service may also call inventory-service)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-and-order-to-services
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: service }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: api-gateway }
+      ports:
+        - { protocol: TCP, port: 18081 }
+        - { protocol: TCP, port: 18082 }
+        - { protocol: TCP, port: 18083 }
+        - { protocol: TCP, port: 18084 }
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: order-service }
+      ports:
+        - { protocol: TCP, port: 18082 }     # order -> inventory REST validation
+---
+# egress counterpart: gateway -> services + Redis (rate limiting)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-egress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: api-gateway }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/component: service }
+      ports:
+        - { protocol: TCP, port: 18081 }
+        - { protocol: TCP, port: 18082 }
+        - { protocol: TCP, port: 18083 }
+        - { protocol: TCP, port: 18084 }
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: redis }      # dev in-cluster Redis
+        - ipBlock:
+            cidr: 10.0.0.0/8                                    # PLACEHOLDER: managed Redis (ElastiCache) subnet CIDR
+      ports:
+        - { protocol: TCP, port: 6379 }
+---
+# services -> inventory (order only), Postgres, Kafka, Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-egress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: service }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: inventory-service }
+      ports:
+        - { protocol: TCP, port: 18082 }
+    - to:                       # in-cluster data stores (dev/test) ...
+        - podSelector:
+            matchLabels: { app.kubernetes.io/part-of: oms-data }
+        - ipBlock:              # ... or managed services (prod). PLACEHOLDER CIDR: tighten to the data subnets.
+            cidr: 10.0.0.0/8
+      ports:
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 9092 }
+        - { protocol: TCP, port: 9098 }     # MSK IAM
+        - { protocol: TCP, port: 6379 }
+---
+# everything -> OpenTelemetry collector in the observability namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-otlp-egress
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/part-of: oms }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+      ports:
+        - { protocol: TCP, port: 4317 }
+        - { protocol: TCP, port: 4318 }
+---
+# Prometheus (monitoring namespace) may scrape /actuator/prometheus; nothing else outside the namespace may.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/part-of: oms }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { protocol: TCP, port: 18080 }
+        - { protocol: TCP, port: 18081 }
+        - { protocol: TCP, port: 18082 }
+        - { protocol: TCP, port: 18083 }
+        - { protocol: TCP, port: 18084 }

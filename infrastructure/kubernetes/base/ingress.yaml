@@ -1,0 +1,33 @@
+# Edge: TLS terminates at the ingress controller (ingress-nginx assumed; on EKS use the AWS Load Balancer Controller
+# annotations instead, see infrastructure/cloud/README.md). The TLS secret `oms-tls` is a PLACEHOLDER NAME: create it with
+# cert-manager (uncomment the issuer annotation) or from your CA; no certificate material lives in this repo.
+# /actuator/** is deliberately NOT routed: only /api and the UI are exposed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oms
+  labels:
+    app.kubernetes.io/part-of: oms
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "128k"      # gateway enforces 64 KB JSON; small margin for headers
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "15"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    # cert-manager.io/cluster-issuer: letsencrypt-staging
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["oms.example.test"]
+      secretName: oms-tls
+  rules:
+    - host: oms.example.test
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: { name: api-gateway, port: { number: 18080 } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: frontend, port: { number: 8080 } }

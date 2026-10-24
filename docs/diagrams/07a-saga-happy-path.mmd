@@ -1,0 +1,34 @@
+---
+title: Saga happy path - order placed to fulfilled
+---
+sequenceDiagram
+  autonumber
+  participant C as Customer UI
+  participant G as api-gateway
+  participant O as order-service
+  participant K as Kafka
+  participant I as inventory-service
+  participant F as fulfillment-service
+  participant N as notification-service
+  C->>G: POST /api/v1/orders (Idempotency-Key, JWT)
+  G->>O: forward (validated JWT, correlation id)
+  O->>O: tx: order CREATED + idempotency row + saga RUNNING
+  O-->>C: 202 Accepted (status CREATED)
+  O->>I: REST POST /internal/products/validate (SERVICE JWT, retry + circuit breaker)
+  I-->>O: all lines ok, prices
+  O->>O: tx: CREATED to VALIDATED, outbox OrderCreated + ReserveInventory
+  O->>K: relay publishes (acks=all)
+  K->>I: ReserveInventory
+  I->>I: tx: atomic UPDATE stock, reservation RESERVED, processed_events, outbox
+  I->>K: InventoryReserved
+  K->>O: InventoryReserved
+  O->>O: tx: INVENTORY_RESERVED to CONFIRMED, outbox OrderConfirmed + StartFulfillment
+  K->>I: OrderConfirmed (reservation COMMITTED)
+  K->>F: StartFulfillment
+  K->>N: OrderCreated, OrderConfirmed (notifications)
+  F->>F: PICKING, PACKED, SHIPPED, COMPLETED (scheduler)
+  F->>K: FulfillmentCompleted
+  K->>O: FulfillmentCompleted (order FULFILLED, OrderFulfilled)
+  K->>I: FulfillmentCompleted (on_hand and reserved decrease)
+  C->>G: GET /orders/id (polling)
+  G-->>C: status FULFILLED

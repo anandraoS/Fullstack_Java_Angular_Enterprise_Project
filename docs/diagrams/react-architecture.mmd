@@ -1,0 +1,57 @@
+---
+title: React 19 architecture - router, Redux store with RTK Query, hooks, MUI and test layers
+---
+flowchart LR
+  subgraph boot[Bootstrap]
+    main[main.tsx<br/>loadConfig config.json] --> app[App.tsx<br/>Provider, ThemeProvider MUI,<br/>BrowserRouter, ToastHost]
+  end
+  subgraph router[React Router 7]
+    routes[routes.tsx<br/>React.lazy per screen]
+    guards[Layout routes<br/>RequireAuth, RequireRole, GuestOnly]
+    shell[AppShell<br/>skip link, role-aware nav,<br/>ErrorBoundary, Suspense]
+  end
+  subgraph screens[Feature screens lazy loaded]
+    s1[login, dashboard, catalog]
+    s2[orders: list, create, detail]
+    s3[inventory, fulfillment, notifications]
+    s4[ops: health, failed orders, audit]
+  end
+  subgraph store[Redux Toolkit store createAppStore]
+    subgraph client[Client state slices]
+      auth[authSlice<br/>session in memory +<br/>sessionStorage mirror]
+      cart[cartSlice]
+      ui[uiSlice<br/>toasts, drawer]
+    end
+    subgraph server[Server state RTK Query]
+      api[api.ts createApi<br/>endpoints, tags, polling]
+      bq[omsBaseQuery<br/>headers, GET-only retry,<br/>ApiError, 401 logout, 429 toast]
+    end
+    lm[listener middleware<br/>on loggedOut: reset API cache, clear cart]
+  end
+  subgraph hooks[Hooks]
+    h1[useOrderPolling<br/>backoff 1.5 s x 1.5^n, cap 8 s]
+    h2[useListQuery, useDebouncedValue]
+    h3[useSessionExpiry]
+    h4[IdempotencyKeyHolder +<br/>React Hook Form + Zod]
+  end
+  mui[MUI components<br/>DataTable, StatusChip, StatusTimeline,<br/>ConfirmDialog, feedback]
+  gw[(API Gateway /api/v1)]
+  subgraph tests[Test layers]
+    t1[Vitest: slices, selectors,<br/>pure helpers]
+    t2[Testing Library + MSW:<br/>API layer and screens]
+    t3[Playwright E2E_UI=react:<br/>same 18 specs as Angular]
+  end
+  app --> routes --> guards --> shell --> screens
+  screens --> hooks
+  screens --> mui
+  screens -->|useXQuery, useXMutation| api
+  hooks --> api
+  screens -->|dispatch, useSelector| client
+  api --> bq --> gw
+  bq -.->|401, 429| client
+  client -.-> lm
+  lm -.-> api
+  t1 -.-> client
+  t2 -.-> server
+  t2 -.-> screens
+  t3 -.-> gw

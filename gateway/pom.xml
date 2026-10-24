@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.enterprise.oms</groupId>
+    <artifactId>oms-services-parent</artifactId>
+    <version>1.0.0</version>
+    <relativePath>../services/pom.xml</relativePath>
+  </parent>
+
+  <artifactId>api-gateway</artifactId>
+  <name>api-gateway</name>
+  <description>OMS edge: Spring Cloud Gateway (reactive) - JWT validation, routing, rate limiting, circuit breaking, dev token endpoint</description>
+
+  <dependencies>
+    <dependency><groupId>org.springframework.cloud</groupId><artifactId>spring-cloud-starter-gateway-server-webflux</artifactId></dependency>
+    <dependency><groupId>org.springframework.cloud</groupId><artifactId>spring-cloud-starter-circuitbreaker-reactor-resilience4j</artifactId></dependency>
+    <!-- explicit: RoutesConfig configures the (always-present) semaphore bulkhead of the reactive circuit-breaker filter; version kept equal to the circuitbreaker module -->
+    <dependency><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-bulkhead</artifactId><version>${resilience4j.version}</version></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-oauth2-resource-server</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+    <!-- Redis rate-limit variant (oms.redis.enabled=true). Present on the classpath, used only when enabled. -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis-reactive</artifactId></dependency>
+    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
+    <dependency><groupId>net.logstash.logback</groupId><artifactId>logstash-logback-encoder</artifactId></dependency>
+
+    <!-- Shared lib: only JwtSecret / JwtTokenFactory / Roles / CorrelationIds / LogMasking / OmsSecurityProperties are used.
+         Servlet/JPA/Kafka/Flyway/springdoc starters are excluded (reactive app); its auto-configs are switched off in application.yml. -->
+    <dependency>
+      <groupId>com.enterprise.oms</groupId>
+      <artifactId>platform-common</artifactId>
+      <exclusions>
+        <exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></exclusion>
+        <exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></exclusion>
+        <exclusion><groupId>org.springframework.kafka</groupId><artifactId>spring-kafka</artifactId></exclusion>
+        <exclusion><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></exclusion>
+        <exclusion><groupId>org.flywaydb</groupId><artifactId>flyway-database-postgresql</artifactId></exclusion>
+        <exclusion><groupId>org.springdoc</groupId><artifactId>springdoc-openapi-starter-webmvc-ui</artifactId></exclusion>
+        <exclusion><groupId>io.github.resilience4j</groupId><artifactId>resilience4j-spring-boot3</artifactId></exclusion>
+        <exclusion><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-aop</artifactId></exclusion>
+        <exclusion><groupId>io.micrometer</groupId><artifactId>micrometer-tracing-bridge-otel</artifactId></exclusion>
+        <exclusion><groupId>io.opentelemetry</groupId><artifactId>opentelemetry-exporter-otlp</artifactId></exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>io.projectreactor</groupId><artifactId>reactor-test</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

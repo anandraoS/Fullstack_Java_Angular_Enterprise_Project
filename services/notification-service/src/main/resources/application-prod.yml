@@ -1,0 +1,12 @@
+# Production profile: PostgreSQL only, no defaults for credentials (startup fails when the env vars are missing).
+spring:
+  datasource:
+    url: ${NOTIFICATION_DB_URL}            # e.g. jdbc:postgresql://postgres:5432/notification_db
+    username: ${NOTIFICATION_DB_USERNAME}
+    password: ${NOTIFICATION_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+springdoc:
+  api-docs:
+    enabled: false          # security: no machine-readable API surface in prod (scripts/export-openapi.mjs runs against dev)
+  swagger-ui:
+    enabled: false

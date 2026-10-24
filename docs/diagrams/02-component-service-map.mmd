@@ -1,0 +1,54 @@
+---
+title: Component and service map with data ownership
+---
+flowchart TB
+  ui[Angular UI or React UI<br/>nginx images, same contract]
+  gw[api-gateway :18080<br/>JWT, CORS, rate limit,<br/>correlation id, circuit breaker]
+  subgraph order[order-service :18081]
+    oc[REST controllers]
+    osm[OrderStateMachine<br/>pure domain]
+    saga[OrderSagaOrchestrator<br/>SagaRecoveryJob<br/>ReconciliationService]
+    oout[outbox relay]
+  end
+  subgraph inv[inventory-service :18082]
+    ic[REST + internal controllers]
+    rs[ReservationService<br/>atomic / pessimistic / optimistic]
+    iexp[ReservationExpiryJob]
+    iout[outbox relay]
+  end
+  subgraph ful[fulfillment-service :18083]
+    fc[REST controller]
+    fsm[FulfillmentStateMachine<br/>progress job]
+    fout[outbox relay]
+  end
+  subgraph noti[notification-service :18084]
+    nc[REST controller]
+    nl[event listener<br/>delivery job + backoff]
+  end
+  odb[(order_db)]
+  idb[(inventory_db)]
+  fdb[(fulfillment_db)]
+  ndb[(notification_db)]
+  kafka[[Kafka]]
+  common[platform-common library<br/>outbox, processed_events, audit,<br/>problem+json, JWT, metrics]
+  ui --> gw
+  gw --> oc
+  gw --> ic
+  gw --> fc
+  gw --> nc
+  saga -->|REST validate with SERVICE JWT| ic
+  order --- odb
+  inv --- idb
+  ful --- fdb
+  noti --- ndb
+  oout --> kafka
+  iout --> kafka
+  fout --> kafka
+  kafka --> saga
+  kafka --> rs
+  kafka --> fsm
+  kafka --> nl
+  common -.linked into every service.-> order
+  common -.-> inv
+  common -.-> ful
+  common -.-> noti

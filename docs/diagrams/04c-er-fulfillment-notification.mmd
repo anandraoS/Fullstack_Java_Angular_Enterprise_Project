@@ -1,0 +1,47 @@
+---
+title: ER diagrams - fulfillment_db and notification_db (V1 shared tables, V10)
+---
+erDiagram
+  fulfillments ||--o{ fulfillment_events : timeline
+  notifications ||--o{ notification_attempts : attempts
+  fulfillments {
+    uuid id PK
+    uuid order_id UK
+    varchar status
+    varchar tracking_number
+    int attempts
+    varchar failure_reason
+    varchar ship_city
+    timestamptz next_step_at
+    bigint version
+  }
+  fulfillment_events {
+    uuid id PK
+    uuid fulfillment_id FK
+    int seq
+    varchar status
+    timestamptz occurred_at
+  }
+  order_contacts {
+    uuid order_id PK
+    uuid customer_id
+    varchar customer_email
+  }
+  notifications {
+    uuid id PK
+    uuid customer_id
+    uuid order_id
+    varchar channel
+    varchar template
+    varchar status
+    int attempts
+    uuid source_event_id
+    timestamptz next_attempt_at
+  }
+  notification_attempts {
+    uuid id PK
+    uuid notification_id FK
+    int attempt_no
+    varchar outcome
+    timestamptz attempted_at
+  }

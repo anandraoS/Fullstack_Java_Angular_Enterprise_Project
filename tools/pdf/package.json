@@ -1,0 +1,19 @@
+{
+  "name": "reservation-platform-pdf-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Markdown -> PDF generator for the platform documentation (pdfkit) and a PDF verification script.",
+  "type": "module",
+  "scripts": {
+    "pdf1": "node build-pdf1.mjs",
+    "pdf2": "node build-pdf2.mjs",
+    "verify": "node verify-pdfs.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.97",
+    "dejavu-fonts-ttf": "2.37.3",
+    "marked": "18.1.1",
+    "pdfjs-dist": "^4.10.38",
+    "pdfkit": "0.20.2"
+  }
+}

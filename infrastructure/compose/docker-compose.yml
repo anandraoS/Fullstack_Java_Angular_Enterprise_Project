@@ -1,0 +1,275 @@
+# OMS full stack for local Docker. NOT EXECUTED during authoring (Docker is not installed on the author machine);
+# statically validated only where tooling allowed (see scripts/validate-infra.sh).
+#
+#   cp .env.example .env && (edit every CHANGE_ME)         # at repo root
+#   (cd services && mvn package -DskipTests) && (frontend: npm ci && npm run build)   # jars are COPYed into images
+#   docker compose --env-file .env -f infrastructure/compose/docker-compose.yml up --build
+#   + observability:  ... -f infrastructure/compose/docker-compose.yml -f infrastructure/compose/docker-compose.observability.yml up
+#
+# Profiles: services run with `dev,json-logs` so the demo token endpoint + seed data exist. Never use `dev` in production.
+name: oms
+
+x-java-service: &java-service
+  restart: unless-stopped
+  stop_grace_period: 40s              # > spring graceful shutdown (25s)
+  read_only: true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001,mode=1777,size=128m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  networks: [backend]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-common-env: &common-env
+  SPRING_PROFILES_ACTIVE: dev,json-logs
+  OMS_JWT_SECRET: ${OMS_JWT_SECRET:?set OMS_JWT_SECRET in .env (openssl rand -base64 48)}
+  OMS_DEMO_PASSWORD: ${OMS_DEMO_PASSWORD:?set OMS_DEMO_PASSWORD in .env}
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  OMS_REDIS_ENABLED: "true"
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: ${OTLP_TRACES_ENDPOINT:-}
+  MANAGEMENT_TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING:-0.0}
+
+services:
+  postgres:
+    image: postgres:16.6-alpine        # pin digest for prod-like use: postgres:16.6-alpine@sha256:<digest>
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?set ORDER_DB_PASSWORD in .env}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?set INVENTORY_DB_PASSWORD in .env}
+      FULFILLMENT_DB_PASSWORD: ${FULFILLMENT_DB_PASSWORD:?set FULFILLMENT_DB_PASSWORD in .env}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  kafka:
+    image: apache/kafka:3.9.1          # KRaft single node (combined broker+controller). Pin digest for prod-like use.
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"    # topics come from kafka-init only (contract section 7)
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+    # NOTE: plaintext, in-network only (no host port published). Use SASL_SSL / mTLS outside a laptop.
+
+  kafka-init:                          # one-shot job: creates topics + DLTs from contract section 7, then exits 0
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka: { condition: service_healthy }
+    restart: "no"
+    entrypoint: ["/bin/sh", "/init/create-topics.sh"]
+    environment:
+      BOOTSTRAP: kafka:9092
+      PARTITIONS: "3"
+      REPLICATION: "1"
+    volumes:
+      - ./kafka/create-topics.sh:/init/create-topics.sh:ro
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 192M }
+
+  order-service:
+    <<: *java-service
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/order-service.Dockerfile
+    image: oms/order-service:${OMS_VERSION:-1.0.0}
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/order_db
+      SPRING_DATASOURCE_USERNAME: oms_order
+      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD:?set ORDER_DB_PASSWORD in .env}
+      OMS_INVENTORY_BASE_URL: http://inventory-service:18082
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+
+  inventory-service:
+    <<: *java-service
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/inventory-service.Dockerfile
+    image: oms/inventory-service:${OMS_VERSION:-1.0.0}
+    environment:
+      <<: *common-env
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory_db
+      SPRING_DATASOURCE_USERNAME: oms_inventory
+      SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:?set INVENTORY_DB_PASSWORD in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+
+  fulfillment-service:
+    <<: *java-service
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/fulfillment-service.Dockerfile
+    image: oms/fulfillment-service:${OMS_VERSION:-1.0.0}
+    environment:
+      <<: *common-env
+      OMS_REDIS_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fulfillment_db
+      SPRING_DATASOURCE_USERNAME: oms_fulfillment
+      SPRING_DATASOURCE_PASSWORD: ${FULFILLMENT_DB_PASSWORD:?set FULFILLMENT_DB_PASSWORD in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { cpus: "0.75", memory: 640M }
+
+  notification-service:
+    <<: *java-service
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/notification-service.Dockerfile
+    image: oms/notification-service:${OMS_VERSION:-1.0.0}
+    environment:
+      <<: *common-env
+      OMS_REDIS_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: oms_notification
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+    deploy:
+      resources:
+        limits: { cpus: "0.75", memory: 640M }
+
+  api-gateway:
+    <<: *java-service
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/api-gateway.Dockerfile
+    image: oms/api-gateway:${OMS_VERSION:-1.0.0}
+    environment:
+      <<: *common-env
+      # Static route targets (contract section 5.5: static URIs from properties). Property names are an assumption
+      # documented in infrastructure/README.md; relaxed binding maps these to oms.gateway.routes.*
+      OMS_GATEWAY_ROUTES_ORDER_URI: http://order-service:18081
+      OMS_GATEWAY_ROUTES_INVENTORY_URI: http://inventory-service:18082
+      OMS_GATEWAY_ROUTES_FULFILLMENT_URI: http://fulfillment-service:18083
+      OMS_GATEWAY_ROUTES_NOTIFICATION_URI: http://notification-service:18084
+      OMS_GATEWAY_CORS_ALLOWED_ORIGINS: http://localhost:${UI_HOST_PORT:-4200}
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-18080}:18080"
+    networks: [backend, frontend]
+    depends_on:
+      order-service: { condition: service_healthy }
+      inventory-service: { condition: service_healthy }
+      fulfillment-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+
+  frontend:
+    # Dockerfile is owned by the frontend module (assumed: nginx-unprivileged serving on 8080, proxying /api to api-gateway:18080)
+    build:
+      context: ../../frontend/oms-ui
+      dockerfile: Dockerfile
+    image: oms/oms-ui:${OMS_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${UI_HOST_PORT:-4200}:8080"
+    depends_on:
+      api-gateway: { condition: service_healthy }
+    networks: [frontend]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  frontend-react:
+    # Second UI (React + Redux Toolkit, ADR 0013). Opt-in: `docker compose --profile react ... up`.
+    # Same runtime contract as `frontend` (nginx-unprivileged on 8080, /api proxied to api-gateway:18080).
+    profiles: [react]
+    build:
+      context: ../../frontend/oms-ui-react
+      dockerfile: Dockerfile
+    image: oms/oms-ui-react:${OMS_VERSION:-1.0.0}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${UI_REACT_HOST_PORT:-4201}:8080"
+    depends_on:
+      api-gateway: { condition: service_healthy }
+    networks: [frontend]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+networks:
+  backend:
+    driver: bridge
+    internal: false     # set true to cut internet egress (services need none); gateway also joins `frontend`
+  frontend:
+    driver: bridge
+
+volumes:
+  pgdata:
+  kafkadata:

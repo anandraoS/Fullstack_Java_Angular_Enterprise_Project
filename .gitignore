@@ -1,0 +1,41 @@
+# build output
+target/
+dist/
+build/
+.angular/
+node_modules/
+*.class
+*.log
+
+# local runtime state and tooling
+.run/
+.work/
+.claude/
+.idea/
+.vscode/
+*.iml
+__pycache__/
+
+# secrets and environment (only *.example files are committed)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+secrets/
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example
+kubeconfig*
+
+# packaged deliverable
+Fullstack_Java_Angular_Enterprise_Project.zip
+
+# Playwright output (traces can contain request bodies)
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/e2e/samples/*full*

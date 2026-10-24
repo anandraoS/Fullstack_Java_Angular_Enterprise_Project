@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    # one private in-memory H2 (PostgreSQL mode) per Spring context
+    url: jdbc:h2:mem:ful-${random.uuid};MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  kafka:
+    bootstrap-servers: localhost:1   # unreachable on purpose; Kafka tests override via @EmbeddedKafka
+
+server:
+  port: 0
+
+oms:
+  security:
+    jwt:
+      allow-ephemeral-secret: true   # tests that need tokens override oms.security.jwt.secret via JwtTestTokens
+  outbox:
+    relay-enabled: false
+    poll-interval-ms: 50
+  messaging:
+    admin-timeout-ms: 500
+    retry:
+      initial-interval-ms: 20
+      max-interval-ms: 100
+  fulfillment:
+    step-delay-ms: 0
+    poll-interval-ms: 20
+    scheduler-enabled: false
+
+logging:
+  level:
+    org.apache.kafka: WARN
+    kafka: WARN
+    org.springframework.kafka: WARN
+    org.apache.zookeeper: WARN
+    org.hibernate: WARN

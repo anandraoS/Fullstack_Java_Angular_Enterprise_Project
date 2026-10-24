@@ -1,0 +1,59 @@
+---
+title: Architecture mind map
+---
+mindmap
+  root((OMS platform))
+    Backend
+      Java 17
+      Spring Boot 3.5
+      Spring Cloud Gateway
+      Resilience4j
+      platform-common
+    Services
+      order orchestrator
+      inventory reservations
+      fulfillment simulation
+      notification delivery
+    Messaging
+      Kafka 5 topics
+      transactional outbox
+      idempotent consumers
+      DLT and replay
+    Consistency
+      Saga orchestration
+      compensation
+      reconciliation
+      atomic stock update
+    Data
+      PostgreSQL per service
+      Flyway
+      H2 locally
+      Redis optional
+    Frontend
+      Angular 20
+      signals stores
+      interceptors
+      route guards
+      React 19 + Redux Toolkit
+      RTK Query server state
+      same 18 e2e specs
+    Security
+      JWT HS256 demo
+      OIDC RS256 target
+      roles and BOLA checks
+      SERVICE tokens
+    Delivery
+      Docker
+      Kubernetes Kustomize
+      Terraform AWS
+      GitHub Actions
+    Quality
+      JUnit and Mockito
+      BDD and Playwright
+      k6
+      runbooks
+    AI
+      spec driven
+      agents
+      flawed examples
+      review gates

@@ -1,0 +1,130 @@
+// Declarative Jenkins equivalent of .github/workflows/ci.yml. NOT EXECUTED (no Jenkins available when authored;
+// the file is not syntax-checked by a Jenkins parser). Assumes: agents labelled `linux` with Docker, JDK 17 and Node 22
+// configured as Jenkins tools named below, and credentials stored in Jenkins (never in this file).
+pipeline {
+  agent { label 'linux' }
+  options {
+    timestamps()
+    timeout(time: 60, unit: 'MINUTES')
+    disableConcurrentBuilds(abortPrevious: true)
+    buildDiscarder(logRotator(numToKeepStr: '30'))
+  }
+  parameters { booleanParam(name: 'DEPLOY_TEST', defaultValue: false, description: 'Deploy to the test cluster (placeholder stage)') }
+  tools { jdk 'temurin-17'; nodejs 'node-22' }
+  environment {
+    REGISTRY = 'registry.example.internal/oms'            // placeholder
+    REGISTRY_CREDS = 'oms-registry-credentials'           // Jenkins credential id (username/password or token)
+    OMS_TOOLS_PLATFORM = 'linux-amd64'
+  }
+  stages {
+    stage('Version') {
+      steps {
+        script {
+          def base = readFile('VERSION').trim()
+          def sha = sh(returnStdout: true, script: 'git rev-parse --short=8 HEAD').trim()
+          env.SEMVER = (env.TAG_NAME?.startsWith('v')) ? env.TAG_NAME.substring(1) : "${base}-${sha}"
+          echo "version ${env.SEMVER}"
+        }
+      }
+    }
+    stage('Build and unit test') {
+      steps { sh 'mvn -B -ntp -f services/pom.xml test && mvn -B -ntp -f services/pom.xml package -DskipTests' }
+      post { always { junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml' } }
+    }
+    stage('Parallel quality gates') {
+      parallel {
+        stage('Integration tests') {
+          steps { sh 'mvn -B -ntp -f services/pom.xml verify -DskipTests=false' }
+          post { always { junit allowEmptyResults: true, testResults: '**/target/failsafe-reports/*.xml' } }
+        }
+        stage('Angular') {
+          steps {
+            dir('frontend/oms-ui') {
+              sh 'npm ci --ignore-scripts && npm run lint --if-present && npm test -- --watch=false --browsers=ChromeHeadless && npm run build -- --configuration production'
+            }
+          }
+        }
+        stage('React') {
+          steps {
+            dir('frontend/oms-ui-react') {
+              sh 'npm ci --ignore-scripts && npm run lint && npm run test:coverage && npm run build'
+            }
+            // the SAME Playwright lifecycle specs, React build, Node mock backend
+            dir('tests/e2e') {
+              sh 'npm ci --ignore-scripts && npx playwright install --with-deps chrome && E2E_UI=react npx playwright test'
+            }
+          }
+        }
+        stage('Semgrep') {
+          steps { sh 'docker run --rm -v "$PWD:/src" semgrep/semgrep:1.97.0 semgrep scan --config p/default --error --metrics=off --exclude node_modules --exclude target /src' }
+        }
+        stage('Dependency scan') {
+          steps {
+            sh 'docker run --rm -v "$PWD:/repo" aquasec/trivy:0.57.1 fs --scanners vuln,misconfig --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 /repo'
+            dir('frontend/oms-ui') { sh 'npm audit --omit=dev --audit-level=high' }
+            dir('frontend/oms-ui-react') { sh 'npm audit --omit=dev --audit-level=high' }
+          }
+        }
+        stage('Secret scan') {
+          steps { sh 'docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 detect --source /repo --redact --no-banner' }
+        }
+        stage('Infra validate') {
+          steps { sh 'node scripts/fetch-validation-tools.mjs kustomize kubeconform terraform && bash scripts/validate-infra.sh' }
+        }
+      }
+    }
+    stage('Docker build and scan') {
+      steps {
+        script {
+          def svcs = ['order-service', 'inventory-service', 'fulfillment-service', 'notification-service', 'api-gateway']
+          svcs.each { s ->
+            sh "docker build -f infrastructure/docker/${s}.Dockerfile -t ${REGISTRY}/${s}:${SEMVER} ."
+            sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.57.1 image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ${REGISTRY}/${s}:${SEMVER}"
+          }
+          sh "docker build -t ${REGISTRY}/oms-ui:${SEMVER} frontend/oms-ui"
+          sh "docker build -t ${REGISTRY}/oms-ui-react:${SEMVER} frontend/oms-ui-react"
+        }
+      }
+    }
+    stage('Push images') {
+      when { anyOf { branch 'main'; buildingTag() } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: env.REGISTRY_CREDS, usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh '''echo "$P" | docker login "$REGISTRY" -u "$U" --password-stdin'''
+          sh 'for s in order-service inventory-service fulfillment-service notification-service api-gateway oms-ui; do docker push "$REGISTRY/$s:$SEMVER"; done'
+        }
+      }
+    }
+    stage('Smoke (local stack)') {
+      steps {
+        sh '''
+          export OMS_JAVA_HOME="$JAVA_HOME"
+          bash scripts/run-local.sh --no-build --emit-env "$WORKSPACE@tmp/oms.env"
+          set -a; . "$WORKSPACE@tmp/oms.env"; set +a
+          bash scripts/smoke-test.sh
+        '''
+      }
+      post { always { sh 'bash scripts/stop-local.sh || true' } }
+    }
+    stage('Deploy to test (PLACEHOLDER, not executed)') {
+      when { allOf { branch 'main'; expression { return params.DEPLOY_TEST == true } } }
+      steps {
+        input message: 'Deploy to the TEST cluster?', ok: 'Deploy'
+        withCredentials([file(credentialsId: 'oms-test-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            cd infrastructure/kubernetes/overlays/test
+            for s in order-service inventory-service fulfillment-service notification-service api-gateway oms-ui; do
+              kustomize edit set image "ghcr.io/example-org/oms/$s=$REGISTRY/$s:$SEMVER"
+            done
+            kustomize build . | kubectl apply -f -
+            kubectl -n oms-test rollout status deploy/api-gateway --timeout=300s
+          '''
+        }
+      }
+    }
+  }
+  post {
+    always { archiveArtifacts artifacts: 'services/*/target/*-1.0.0.jar, gateway/target/*-1.0.0.jar', allowEmptyArchive: true }
+    cleanup { cleanWs() }
+  }
+}

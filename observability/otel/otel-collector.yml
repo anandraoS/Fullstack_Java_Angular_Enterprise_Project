@@ -1,0 +1,57 @@
+# OpenTelemetry Collector (contrib) for the Compose observability overlay.
+# Apps push OTLP/HTTP traces (management.otlp.tracing.endpoint). Metrics stay on the Prometheus pull path;
+# logs go through Promtail->Loki (see observability/loki/). Collector self-metrics on :8888.
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+    spike_limit_mib: 50
+  batch:
+    timeout: 5s
+  # Defence in depth: drop attributes that could carry credentials or PII even if an instrumentation adds them.
+  attributes/scrub:
+    actions:
+      - { key: http.request.header.authorization, action: delete }
+      - { key: http.request.header.cookie, action: delete }
+      - { key: db.statement, action: delete }
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls: { insecure: true }     # in-network demo only; use mTLS across hosts
+  debug:
+    verbosity: basic
+
+  # ------------------------------------------------------------------------------------------------
+  # CONCEPTUAL ONLY (not enabled, not tested): ship logs/traces to Splunk via HTTP Event Collector.
+  # The HEC token must come from a secret store / env var, never from this file.
+  #
+  # splunk_hec:
+  #   endpoint: https://splunk.example.internal:8088/services/collector
+  #   token: ${env:SPLUNK_HEC_TOKEN}
+  #   source: oms
+  #   sourcetype: _json
+  #   index: oms
+  #   tls: { insecure_skip_verify: false }
+  #
+  # and add `splunk_hec` to the `exporters:` list of a `logs` pipeline fed by a filelog or otlp receiver.
+  # ------------------------------------------------------------------------------------------------
+
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics: { address: 0.0.0.0:8888 }
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/scrub, batch]
+      exporters: [otlp/tempo]

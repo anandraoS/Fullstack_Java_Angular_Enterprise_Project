@@ -1,0 +1,34 @@
+---
+title: Deployment - Docker Compose, Kubernetes (Kustomize) and AWS reference
+---
+flowchart LR
+  subgraph local[Local: scripts/run-local.sh - no Docker]
+    ls[local-stack embedded Kafka :19092<br/>4 services + gateway, H2 in PostgreSQL mode]
+  end
+  subgraph compose[Docker Compose - infrastructure/compose]
+    cui[frontend nginx] --> cgw[api-gateway]
+    cgw --> csvc[4 services]
+    csvc --> cpg[(PostgreSQL 16<br/>4 databases)]
+    csvc --> ckf[[Kafka KRaft 3.9]]
+    cgw -.-> crd[(Redis)]
+  end
+  subgraph k8s[Kubernetes - Kustomize base plus overlays dev / test / prod]
+    ing[Ingress] --> kfe[frontend Deployment]
+    ing --> kgw[api-gateway Deployment<br/>probes, resources, SA]
+    kgw --> ksvc[order, inventory, fulfillment, notification<br/>Deployments + Services]
+    np[NetworkPolicies default deny]
+    cm[ConfigMap + Secret from env]
+    keda[KEDA ScaledObject on Kafka lag]
+    mon[ServiceMonitor + PrometheusRule]
+  end
+  subgraph aws[AWS reference - Terraform, validated statically only]
+    r53[Route 53 + WAF + ALB] --> eks[EKS managed nodes<br/>private subnets, 3 AZ]
+    eks --> rds[(RDS PostgreSQL Multi-AZ)]
+    eks --> msk[[MSK Kafka]]
+    eks --> ec[(ElastiCache Redis)]
+    ecr[(ECR)] -.pull.-> eks
+    sm[Secrets Manager + IRSA] -.-> eks
+  end
+  ls -.same jars.-> compose
+  compose -.same images.-> k8s
+  k8s -.managed equivalents.-> aws

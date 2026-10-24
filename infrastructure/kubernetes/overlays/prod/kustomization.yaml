@@ -1,0 +1,57 @@
+# PROD reference overlay: managed Postgres/Kafka/Redis (endpoints below are PLACEHOLDERS), 3+ replicas, zone spread,
+# stricter PDBs, no `dev` profile (so no token endpoint, no seed data, and no default secrets: startup fails without them).
+# Images should be referenced by DIGEST in prod: newName/digest instead of newTag (CI writes it after the image scan passes).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: oms-prod
+resources:
+  - ../../base
+images:
+  - { name: ghcr.io/example-org/oms/order-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/inventory-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/fulfillment-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/notification-service, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/api-gateway, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/oms-ui, newTag: 1.0.0 }
+  - { name: ghcr.io/example-org/oms/oms-ui-react, newTag: 1.0.0 }
+replicas:
+  - { name: order-service, count: 3 }
+  - { name: inventory-service, count: 3 }
+  - { name: fulfillment-service, count: 2 }
+  - { name: notification-service, count: 2 }
+  - { name: api-gateway, count: 3 }
+  - { name: frontend, count: 2 }
+patches:
+  - target: { kind: HorizontalPodAutoscaler }
+    patch: |-
+      - { op: replace, path: /spec/minReplicas, value: 3 }
+      - { op: replace, path: /spec/maxReplicas, value: 12 }
+  - target: { kind: PodDisruptionBudget, name: "(order-service|inventory-service|api-gateway)" }
+    patch: |-
+      - { op: replace, path: /spec/minAvailable, value: 2 }
+  - target: { kind: Deployment, labelSelector: "app.kubernetes.io/component in (service,edge)" }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/topologySpreadConstraints/0/whenUnsatisfiable
+        value: DoNotSchedule
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints/-
+        value:
+          maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: oms
+  - target: { kind: ConfigMap, name: oms-config }
+    patch: |-
+      - { op: replace, path: /data/SPRING_PROFILES_ACTIVE, value: "prod,json-logs" }
+      - { op: replace, path: /data/OMS_DB_HOST, value: "oms-pg.cluster-PLACEHOLDER.eu-west-1.rds.amazonaws.com" }
+      - { op: replace, path: /data/KAFKA_BOOTSTRAP_SERVERS, value: "b-1.oms-msk.PLACEHOLDER.kafka.eu-west-1.amazonaws.com:9098" }   # MSK IAM, matches Terraform sasl.iam=true (client also needs aws-msk-iam-auth + SASL_SSL props: docs/known-limitations.md)
+      - { op: replace, path: /data/SPRING_DATA_REDIS_HOST, value: "oms-redis.PLACEHOLDER.cache.amazonaws.com" }
+      - { op: replace, path: /data/MANAGEMENT_TRACING_SAMPLING_PROBABILITY, value: "0.05" }
+      - { op: replace, path: /data/OMS_GATEWAY_CORS_ALLOWED_ORIGINS, value: "https://oms.example.com" }
+  - target: { kind: Ingress, name: oms }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: oms.example.com }
+      - { op: replace, path: /spec/tls/0/hosts/0, value: oms.example.com }

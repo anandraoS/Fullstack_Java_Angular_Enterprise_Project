@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oms.example/schemas/events/OrderFulfilled.schema.json",
+  "title": "OrderFulfilled",
+  "description": "Topic oms.order.events.v1, produced by order-service. schemaVersion 1. Additive changes only (new optional payload fields).",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "occurredAt",
+    "correlationId",
+    "aggregateType",
+    "aggregateId",
+    "producer",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "eventType": {
+      "const": "OrderFulfilled"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "aggregateType": {
+      "const": "Order"
+    },
+    "aggregateId": {
+      "type": "string"
+    },
+    "producer": {
+      "const": "order-service"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "customerId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "customerEmail": {
+          "type": "string",
+          "minLength": 3
+        },
+        "trackingNumber": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "orderId",
+        "customerId",
+        "customerEmail",
+        "trackingNumber"
+      ]
+    }
+  }
+}

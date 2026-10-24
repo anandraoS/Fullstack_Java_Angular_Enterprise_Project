@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: notification-service          # Kafka consumer group, metric tag "service"
+  datasource:
+    # Local default: in-memory H2 in PostgreSQL mode (same Flyway SQL as production). No credentials of value.
+    url: ${NOTIFICATION_DB_URL:jdbc:h2:mem:notification_db;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1}
+    username: ${NOTIFICATION_DB_USERNAME:sa}
+    password: ${NOTIFICATION_DB_PASSWORD:}
+
+server:
+  port: ${SERVER_PORT:18084}
+
+oms:
+  outbox:
+    enabled: false                       # notification-service only consumes; it never publishes events
+  messaging:
+    topics: oms.order.events.v1,oms.fulfillment.events.v1
+  notification:
+    max-attempts: ${OMS_NOTIFICATION_MAX_ATTEMPTS:5}
+    simulated-failures: ${OMS_NOTIFICATION_SIMULATED_FAILURES:2}   # fail.example.test recipients fail the first N attempts
+    backoff-initial-ms: ${OMS_NOTIFICATION_BACKOFF_INITIAL_MS:1000}
+    backoff-multiplier: ${OMS_NOTIFICATION_BACKOFF_MULTIPLIER:2.0}
+    backoff-max-ms: ${OMS_NOTIFICATION_BACKOFF_MAX_MS:30000}
+    poll-interval-ms: ${OMS_NOTIFICATION_POLL_INTERVAL_MS:250}
+    batch-size: 25
+    scheduler-enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs

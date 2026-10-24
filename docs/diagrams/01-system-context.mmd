@@ -1,0 +1,38 @@
+---
+title: System context - OMS platform, actors and dependencies
+---
+flowchart LR
+  cust([Customer<br/>CUSTOMER role]):::actor
+  op([Operator<br/>OPERATOR role]):::actor
+  adm([Administrator<br/>ADMIN role]):::actor
+  subgraph oms[Order Management and Fulfillment Platform]
+    ui[Angular 20 UI<br/>oms-ui :4200]
+    uir[React 19 + Redux UI<br/>oms-ui-react :4201]
+    gw[API Gateway<br/>Spring Cloud Gateway :18080]
+    svc[Domain services<br/>order, inventory,<br/>fulfillment, notification]
+  end
+  kafka[[Apache Kafka<br/>5 topics + DLTs]]:::infra
+  pg[(PostgreSQL 16<br/>one database per service)]:::infra
+  redis[(Redis<br/>optional: rate limits, product cache)]:::infra
+  obs[Observability stack<br/>Prometheus, Grafana, Loki, Tempo, OTel]:::infra
+  idp[OIDC identity provider<br/>production target;<br/>demo uses gateway dev tokens]:::future
+  mail[Email / SMS provider<br/>simulated only]:::future
+  cust --> ui
+  op --> ui
+  adm --> ui
+  cust -.-> uir
+  op -.-> uir
+  adm -.-> uir
+  ui -->|HTTPS /api/v1 + JWT| gw
+  uir -->|HTTPS /api/v1 + JWT, same contract| gw
+  gw -->|REST + JWT| svc
+  svc <-->|commands and events| kafka
+  svc --> pg
+  gw -.-> redis
+  svc -.-> redis
+  svc -.->|metrics, logs, traces| obs
+  idp -.->|JWKS / issuer| gw
+  svc -.->|never contacts a real provider| mail
+  classDef actor fill:#e8f1fb,stroke:#17324d
+  classDef infra fill:#eef7f0,stroke:#2f6b3f
+  classDef future fill:#fff4e5,stroke:#b26a00,stroke-dasharray: 4 3

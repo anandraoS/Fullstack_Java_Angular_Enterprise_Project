@@ -1,0 +1,51 @@
+<a class="skip-link" href="#main" (click)="$event.preventDefault(); main.focus()">Skip to main content</a>
+
+<mat-toolbar class="top" color="primary">
+  @if (auth.isAuthenticated()) {
+    <button mat-button type="button" class="menu-btn" (click)="toggleNav()" aria-label="Toggle navigation menu" [attr.aria-expanded]="sidenav()?.opened ?? false">
+      Menu
+    </button>
+  }
+  <span class="brand">OMS Console</span>
+  <span class="demo-tag">synthetic demo</span>
+  <span class="spacer"></span>
+  @if (auth.isAuthenticated()) {
+    @if (cart.count() > 0) {
+      <a mat-button routerLink="/orders/new" [queryParams]="{ fromCart: 1 }" aria-label="Cart: {{ cart.count() }} items, go to order form">Cart ({{ cart.count() }})</a>
+    }
+    <button mat-button type="button" [matMenuTriggerFor]="userMenu" aria-label="Account menu for {{ auth.username() }}">
+      {{ auth.username() }}
+    </button>
+    <mat-menu #userMenu="matMenu">
+      <div class="menu-info" role="presentation">Roles: {{ roleLabel() }}</div>
+      <button mat-menu-item type="button" (click)="logout()">Sign out</button>
+    </mat-menu>
+  }
+</mat-toolbar>
+
+<mat-sidenav-container class="container">
+  @if (auth.isAuthenticated()) {
+    <mat-sidenav
+      [mode]="isNarrow() ? 'over' : 'side'"
+      [opened]="!isNarrow()"
+      [fixedInViewport]="false"
+      role="navigation"
+      aria-label="Main navigation"
+    >
+      <nav>
+        <mat-nav-list>
+          @for (item of nav(); track item.path) {
+            <a mat-list-item [routerLink]="item.path" routerLinkActive="active-link" #rla="routerLinkActive" [routerLinkActiveOptions]="{ exact: item.path === '/orders' }" [attr.aria-current]="rla.isActive ? 'page' : null">
+              {{ item.label }}
+            </a>
+          }
+        </mat-nav-list>
+      </nav>
+    </mat-sidenav>
+  }
+  <mat-sidenav-content>
+    <main id="main" #main tabindex="-1" class="content">
+      <router-outlet />
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>
