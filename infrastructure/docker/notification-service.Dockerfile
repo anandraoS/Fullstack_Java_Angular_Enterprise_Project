@@ -6,7 +6,7 @@
 # (tags are mutable):  docker buildx imagetools inspect eclipse-temurin:17.0.13_11-jre-alpine
 # then use  eclipse-temurin:17.0.13_11-jre-alpine@sha256:<digest>  and let Renovate/Dependabot bump it.
 # The tag was NOT digest-resolved here (no registry access during authoring).
-ARG JRE_IMAGE=eclipse-temurin:17.0.13_11-jre-alpine
+ARG JRE_IMAGE=eclipse-temurin:21-jre-alpine-3.24
 
 # ---- stage 1: split the Spring Boot fat jar into cache-friendly layers (deps rarely change, app code often)
 FROM ${JRE_IMAGE} AS extract
